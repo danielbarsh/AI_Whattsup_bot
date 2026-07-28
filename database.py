@@ -1,51 +1,65 @@
-import sqlite3
-from datetime import datetime
-from typing import List, Tuple
-from models import ExpenseModel
+import os
+from supabase import create_client, Client
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "expenses.db"):
-        self.db_path = db_path
-        self._init_db()
+    def __init__(self):
+        # משיכת פרטי ה-API של Supabase ממשתני הסביבה
+        self.url = os.environ.get("SUPABASE_URL", "")
+        self.key = os.environ.get("SUPABASE_KEY", "")
+        
+        # אתחול הלקוח רק אם המפתחות קיימים
+        if self.url and self.key:
+            self.supabase: Client = create_client(self.url, self.key)
+        else:
+            self.supabase = None
+            print("⚠️ אזהרה: מפתחות Supabase לא הוגדרו ב-.env. הבוט יפעל ללא שמירה בענן.")
 
-    def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS expenses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT,
-                    item TEXT,
-                    amount REAL,
-                    category TEXT,
-                    user TEXT
-                )
-            ''')
-            conn.commit()
-
-    def save_expense(self, expense: ExpenseModel) -> None:
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO expenses (date, item, amount, category, user) VALUES (?, ?, ?, ?, ?)",
-                (current_date, expense.item, expense.amount, expense.category, expense.user)
-            )
-            conn.commit()
-
-    def fetch_monthly_data(self, month_str: str) -> Tuple[float, List[Tuple[str, float]]]:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT SUM(amount) FROM expenses WHERE date LIKE ?", (f"{month_str}%",))
-            total = cursor.fetchone()[0] or 0.0
+    def save_expense(self, expense_data):
+        """שמירת הוצאה חדשה בענן דרך ה-API של Supabase"""
+        if not self.supabase:
+            print("❌ שגיאה: בסיס הנתונים לא מחובר.")
+            return
             
-            cursor.execute("""
-                SELECT category, SUM(amount) 
-                FROM expenses 
-                WHERE date LIKE ? 
-                GROUP BY category 
-                ORDER BY SUM(amount) DESC
-            """, (f"{month_str}%",))
-            categories = cursor.fetchall()
-            
-            return total, categories
+        # יצירת המילון להתאמה מלאה מול עמודות הטבלה
+        data = {
+            "date": expense_data["date"],
+            "item": expense_data["item"],
+            "amount": float(expense_data["amount"]),
+            "category": expense_data["category"],
+            "user": expense_data["user"]
+        }
+        
+        try:
+            # הכנסת הנתונים לטבלה בענן
+            self.supabase.table("expenses").insert(data).execute()
+            print(f"💾 ההוצאה נשמרה בהצלחה ב-Supabase: {expense_data['item']}")
+        except Exception as e:
+            print(f"❌ שגיאה בשמירת הנתונים ב-Supabase: {e}")
+
+    def get_monthly_summary(self, month_str):
+        """שליפת כל ההוצאות לחודש מסוים (בפורמט YYYY-MM)"""
+        if not self.supabase:
+            return []
+
+        # חישוב טווח התאריכים המלא עבור החודש המבוקש (למשל מ-2026-07-01 עד 2026-08-01)
+        # זה מבטיח שליפה מדויקת מתוך עמודת TIMESTAMPTZ
+        year, month = map(int, month_str.split("-"))
+        start_date = f"{year}-{month:02d}-01T00:00:00Z"
+        
+        if month == 12:
+            end_date = f"{year + 1}-01-01T00:00:00Z"
+        else:
+            end_date = f"{year}-{month + 1:02d}-01T00:00:00Z"
+
+        try:
+            # שליפת נתונים באמצעות פילטרים מובנים של גדול-שווה וקטן-מ
+            response = self.supabase.table("expenses") \
+                .select("item, amount, category, user") \
+                .gte("date", start_date) \
+                .lt("date", end_date) \
+                .execute()
+                
+            return response.data
+        except Exception as e:
+            print(f"❌ שגיאה בשליפת סיכום חודשי מ-Supabase: {e}")
+            return []
