@@ -15,24 +15,26 @@ class DatabaseManager:
             print("⚠️ אזהרה: מפתחות Supabase לא הוגדרו ב-.env. הבוט יפעל ללא שמירה בענן.")
 
     def save_expense(self, expense_data):
-        """שמירת הוצאה חדשה בענן דרך ה-API של Supabase"""
+        """שמירת הוצאה חדשה בענן - ללא שום גישה לשדה תאריך באובייקט הפייתון"""
         if not self.supabase:
             print("❌ שגיאה: בסיס הנתונים לא מחובר.")
             return
             
-        # יצירת המילון להתאמה מלאה מול עמודות הטבלה
-        data = {
-            "date": expense_data["date"],
-            "item": expense_data["item"],
-            "amount": float(expense_data["amount"]),
-            "category": expense_data["category"],
-            "user": expense_data["user"]
-        }
-        
         try:
-            # הכנסת הנתונים לטבלה בענן
+            # חילוץ בטוח של השדות הקימיים בלבד. 
+            # אם השדה נקרא user, נמפה אותו לעמודת user_name ב-Supabase
+            user_val = getattr(expense_data, "user", None) or getattr(expense_data, "user_name", "Unknown")
+            
+            data = {
+                "item": getattr(expense_data, "item", "פריט כללי"),
+                "amount": float(getattr(expense_data, "amount", 0)),
+                "category": getattr(expense_data, "category", "כללי"),
+                "user_name": user_val
+            }
+            
+            # שליחה ל-Supabase. עמודת ה-date תתמלא אוטומטית על ידי השרת בענן (DEFAULT NOW)
             self.supabase.table("expenses").insert(data).execute()
-            print(f"💾 ההוצאה נשמרה בהצלחה ב-Supabase: {expense_data['item']}")
+            print(f"💾 ההוצאה נשמרה בהצלחה ב-Supabase: {data['item']}")
         except Exception as e:
             print(f"❌ שגיאה בשמירת הנתונים ב-Supabase: {e}")
 
@@ -41,8 +43,7 @@ class DatabaseManager:
         if not self.supabase:
             return []
 
-        # חישוב טווח התאריכים המלא עבור החודש המבוקש (למשל מ-2026-07-01 עד 2026-08-01)
-        # זה מבטיח שליפה מדויקת מתוך עמודת TIMESTAMPTZ
+        # חישוב טווח התאריכים המלא עבור החודש המבוקש
         year, month = map(int, month_str.split("-"))
         start_date = f"{year}-{month:02d}-01T00:00:00Z"
         
@@ -52,9 +53,9 @@ class DatabaseManager:
             end_date = f"{year}-{month + 1:02d}-01T00:00:00Z"
 
         try:
-            # שליפת נתונים באמצעות פילטרים מובנים של גדול-שווה וקטן-מ
+            # שליפת נתונים מותאמת לעמודת user_name
             response = self.supabase.table("expenses") \
-                .select("item, amount, category, user") \
+                .select("item, amount, category, user_name") \
                 .gte("date", start_date) \
                 .lt("date", end_date) \
                 .execute()
