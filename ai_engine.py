@@ -6,7 +6,7 @@ class FinanceAI:
         self.client = OpenAI(api_key=api_key)
         self.model_name = "gpt-4o-mini"
 
-    def analyze_text(self, text_message: str) -> ExpenseModel:
+    def parse_expense(self, text_message: str) -> ExpenseModel:
         prompt = f'Analyze: "{text_message}". Extract item, amount, category (e.g. סופר, דלק, בית, מסעדות, שונות). If not an expense, set is_expense=false.'
         
         completion = self.client.beta.chat.completions.parse(
