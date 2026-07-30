@@ -36,8 +36,10 @@ class MessageItem(BaseModel):
     from_me: bool
     type: str
     text: Optional[TextObject] = None
-    # Whapi משתמשת לעיתים קרובות ב-push_name עבור השם הפרטי של השולח
-    push_name: Optional[str] = None  
+    # Whapi שולחת את שם התצוגה של השולח בפועל בשדה from_name
+    from_name: Optional[str] = None
+    # שדות גיבוי - חלק מהאינטגרציות/גרסאות של Whapi עשויות לשלוח את השם תחת שמות אלו
+    push_name: Optional[str] = None
     name: Optional[str] = None
     sender_name: Optional[str] = None
 
@@ -66,7 +68,9 @@ async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: Backg
             
             # לוגיקת שליפת שם מתקדמת וחסינת תקלות
             sender_name = None
-            if msg.push_name:
+            if msg.from_name:
+                sender_name = msg.from_name
+            elif msg.push_name:
                 sender_name = msg.push_name
             elif msg.sender_name:
                 sender_name = msg.sender_name
