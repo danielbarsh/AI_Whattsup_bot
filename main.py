@@ -1,5 +1,5 @@
 import os
-import requests  # נוסיף לצורך שליחת התשובה חזרה לוואטסאפ
+import requests  # לצורך שליחת התשובה חזרה לוואטסאפ דרך ה-API של Whapi
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
@@ -17,11 +17,14 @@ app = FastAPI(title="WhatsApp Expense Webhook")
 # --- אתחול הרכיבים ---
 db_mgr = DatabaseManager()
 ai_mgr = FinanceAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+
+# מעבירים ל-bot_core את המנהלים כדי שיוכל להשתמש ב-db וב-AI בפנים
 bot_core = BotCore(db_manager=db_mgr, ai_manager=ai_mgr)
 
+# משיכת הטוקן ממשתני הסביבה (מוגדר בלוח הבקרה של Render)
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "YOUR_WHAPI_TOKEN_HERE")
 
-# --- התאמת ה-Pydantic Models למבנה האמיתי של Whapi ---
+# --- התאמת ה-Pydantic Models למבנה גמיש וחסין קריסות של Whapi ---
 class TextObject(BaseModel):
     body: str
 
@@ -29,17 +32,22 @@ class MessageItem(BaseModel):
     id: str
     chat_id: str  # מזהה הצ'אט - קריטי כדי לדעת למי לענות!
     from_me: bool
-    name: Optional[str] = "משתמש וואטסאפ"  # שם השולח כפי שמופיע בוואטסאפ
+    name: Optional[str] = None  # הפיכה ל-Optional מלא למניעת שגיאות Pydantic בהודעות יוצאות
     type: str
     text: Optional[TextObject] = None
 
 class WhapiWebhookPayload(BaseModel):
-    messages: List[MessageItem]  # Whapi שולחת רשימה של הודעות
+    # שימוש ב-Optional למקרה ש-Whapi שולחת איוונט סטטוס/קריאה ללא מערך הודעות
+    messages: Optional[List[MessageItem]] = None
 
 # --- ה-Endpoint לקבלת ההודעות ---
 @app.post("/webhook")
 async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: BackgroundTasks):
     """נקודת קצה לקבלת הודעות בוואטסאפ מ-Whapi"""
+    
+    # אם קיבלנו איוונט מערכת/סטטוס ללא הודעות, נתעלם באלגנטיות בלי לקרוס
+    if not payload.messages:
+        return {"status": "success", "detail": "No messages in payload"}
     
     for msg in payload.messages:
         # מתעלמים מהודעות שהבוט עצמו שלח כדי למנוע לופ אינסופי
@@ -49,7 +57,7 @@ async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: Backg
         # ודא שמדובר בהודעת טקסט ויש בה תוכן
         if msg.type == "text" and msg.text:
             message_text = msg.text.body
-            sender_name = msg.name
+            sender_name = msg.name if msg.name else "משתמש וואטסאפ"
             chat_id = msg.chat_id
             
             # שליחה לטיפול ברקע - הוספנו את chat_id כדי שנדע לאן להחזיר תשובה
