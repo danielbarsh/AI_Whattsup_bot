@@ -37,6 +37,7 @@ class DatabaseManager:
             print(f"💾 ההוצאה נשמרה בהצלחה ב-Supabase: {data['item']}")
         except Exception as e:
             print(f"❌ שגיאה בשמירת הנתונים ב-Supabase: {e}")
+            raise
 
     def get_budgets(self):
         """שליפת התקציבים המוגדרים לכל קטגוריה. מחזיר {} בשקט אם הטבלה עדיין לא קיימת/ריקה."""
@@ -66,6 +67,7 @@ class DatabaseManager:
             print(f"💾 תקציב עודכן בהצלחה ב-Supabase: {category} -> {amount}")
         except Exception as e:
             print(f"❌ שגיאה בעדכון תקציב ב-Supabase: {e}")
+            raise
 
     def get_monthly_summary(self, month_str):
         """שליפת כל ההוצאות לחודש מסוים (בפורמט YYYY-MM)"""
