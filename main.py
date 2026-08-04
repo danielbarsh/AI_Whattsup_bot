@@ -55,13 +55,15 @@ scheduler = BackgroundScheduler(timezone="Asia/Jerusalem")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(
+    job = scheduler.add_job(
         send_daily_reminder,
-        CronTrigger(hour=15, minute=6, timezone="Asia/Jerusalem"),
+        CronTrigger(hour=15, minute=10, timezone="Asia/Jerusalem"),
         id="daily_expense_reminder",
         replace_existing=True,
     )
     scheduler.start()
+    # לוג ניתן לבדיקה מיד אחרי דיפלוי - בלי להמתין לשעת השליחה ובלי לבצע שליחה בפועל
+    print(f"[תזמון פעיל] התזכורת היומית תישלח הבא ב-{job.next_run_time} (שעון ישראל)")
     yield
     scheduler.shutdown(wait=False)
 
