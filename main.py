@@ -57,7 +57,7 @@ scheduler = BackgroundScheduler(timezone="Asia/Jerusalem")
 async def lifespan(app: FastAPI):
     scheduler.add_job(
         send_daily_reminder,
-        CronTrigger(hour=15, minute=0, timezone="Asia/Jerusalem"),
+        CronTrigger(hour=15, minute=6, timezone="Asia/Jerusalem"),
         id="daily_expense_reminder",
         replace_existing=True,
     )
