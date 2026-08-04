@@ -36,10 +36,8 @@ class MessageItem(BaseModel):
     from_me: bool
     type: str
     text: Optional[TextObject] = None
-    # Whapi משתמשת לעיתים קרובות ב-push_name עבור השם הפרטי של השולח
-    push_name: Optional[str] = None  
-    name: Optional[str] = None
-    sender_name: Optional[str] = None
+    # השדה האמיתי שמחזיר Whapi עבור שם השולח (ה-pushname מוואטסאפ)
+    from_name: Optional[str] = None
 
 class WhapiWebhookPayload(BaseModel):
     messages: Optional[List[MessageItem]] = None
@@ -64,16 +62,8 @@ async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: Backg
             message_text = msg.text.body
             chat_id = msg.chat_id
             
-            # לוגיקת שליפת שם מתקדמת וחסינת תקלות
-            sender_name = None
-            if msg.push_name:
-                sender_name = msg.push_name
-            elif msg.sender_name:
-                sender_name = msg.sender_name
-            elif msg.name:
-                sender_name = msg.name
-            else:
-                sender_name = "משתמש וואטסאפ"
+            # שליפת שם השולח מהשדה האמיתי שמחזיר Whapi
+            sender_name = msg.from_name or "משתמש וואטסאפ"
                 
             print(f"[עיבוד הודעה]: מאת={sender_name}, תוכן={message_text}, צ'אט={chat_id}")
             

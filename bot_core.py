@@ -1,10 +1,16 @@
 import calendar
 import datetime
 import random
-from database import DatabaseManager
+from typing import Optional, get_args
 
-# הודעת פתיחה כשמישהו פשוט מברך את הבוט או שולח הודעה שלא קשורה להוצאות
-GREETING_MESSAGE = "היי דניאל ואפרת! 😊 אני העוזר האישי שלכם לניהול ההוצאות. פשוט תכתבו לי מה קניתם ובכמה (למשל: \"חלב וביצים ב-25 ש\"ח\"), ואני ארשום את זה. אפשר גם לבקש ממני \"סיכום\" בכל רגע."
+from models import ParsedMessage, ExpenseCategory
+
+# תשובות לשיחת חולין/ברכות (chitchat) - בלי שום עלות AI, מעבר לסיווג שכבר בוצע
+CHITCHAT_REPLIES = [
+    "היי! 😊 מה שלום התקציב היום? אפשר לרשום הוצאה, לשאול על תקציב, או לבקש \"סיכום\".",
+    "שלום! 👋 אני כאן לכל מה שקשור לכסף של הבית - הוצאות, תקציבים וסיכומים.",
+    "בשמחה! מוזמנים לרשום הוצאה (למשל \"חלב ב-10 ש\"ח\"), לשאול \"כמה נשאר לי בתקציב סופר?\", או לבקש \"סיכום\".",
+]
 
 # פידבק חיובי קבוע שדניאל תמיד יקבל כשאפרת רושמת הוצאה - הבוט קצת נוטה לצדה :)
 EFRAT_COMPLIMENTS = [
@@ -32,50 +38,103 @@ class BotCore:
         self.ai = ai_manager
 
     def process_message(self, text: str, sender_name: str) -> str:
-        """הפונקציה המרכזית שאחראית לנתב בין שמירה לשליפת סיכום"""
+        """הפונקציה המרכזית שאחראית לנתב בין כל סוגי ההודעות"""
         lower_text = text.lower()
-        
-        # 1. בדיקה אם מדובר בבקשת סיכום
+
+        # שכבה 0 (חינם): בדיקה אם מדובר בבקשת סיכום, בלי לגעת ב-AI בכלל
         if "סיכום" in lower_text or "דוח" in lower_text or "כמה הוצאתי" in lower_text:
-            # חילוץ חודש נוכחי כברירת מחדל בפורמט YYYY-MM
             current_month = datetime.datetime.now().strftime("%Y-%m")
-            
+
             # זיהוי דינמי בסיסי של חודש ספציפי מתוך ההודעה
             month_to_fetch = current_month
             if "2026-07" in text:
                 month_to_fetch = "2026-07"
             elif "2026-08" in text:
                 month_to_fetch = "2026-08"
-                
+
             return self._handle_summary_request(month_to_fetch)
-            
-        # 2. אם זו לא בקשת סיכום -> מדובר בהוצאה חדשה לשמירה
-        return self._handle_new_expense(text, sender_name)
 
-    def _handle_new_expense(self, text: str, sender_name: str) -> str:
-        """טיפול בהוצאה חדשה: פענוח ב-AI ושמירה ב-Supabase"""
+        # שכבה 1: קריאת AI אחת שמסווגת כוונה ומחלצת שדות
         try:
-            # הפעלה של ה-AI האמיתי מתוך ה-ai_engine שלך (מתואם לאובייקט ה-ai_mgr שמועבר ב-main)
-            # בהתאם למבנה שלך, הוספנו ל-expense_data את השולח
-            expense_data = self.ai.parse_expense(text)
+            parsed = self.ai.understand_message(text)
+        except Exception as e:
+            print(f"❌ שגיאה בניתוח ההודעה ב-AI: {e}")
+            return "משהו השתבש בהבנת ההודעה, אפשר לנסות לנסח מחדש?"
 
-            # אם ה-AI זיהה שזו לא באמת הוצאה (למשל ברכה או שאלה) - לא שומרים, רק מציגים הודעת פתיחה
-            if not expense_data.is_expense:
-                return GREETING_MESSAGE
+        parsed.user = sender_name
 
-            # עדכון שדה המשתמש באובייקט למי ששלח את ההודעה בפועל בוואטסאפ
-            expense_data.user = sender_name
+        if parsed.intent == "expense":
+            return self._handle_new_expense(parsed)
+        if parsed.intent == "budget_set":
+            return self._handle_budget_set(parsed)
+        if parsed.intent == "budget_query":
+            return self._handle_budget_query(parsed)
+        if parsed.intent == "general_question":
+            return self._handle_general_question(parsed)
+        return self._handle_chitchat()
 
-            # קריאה לפונקציית השמירה המעודכנת בדאטהבייס (עובד עם user_name ב-SQL)
-            self.db.save_expense(expense_data)
+    def _spend_by_category(self, month_str: str) -> dict:
+        """סך ההוצאות של חודש נתון, מקובץ לפי קטגוריה - מבוסס על אותה שליפה שמשרתת גם את הסיכום"""
+        expenses = self.db.get_monthly_summary(month_str)
+        totals: dict = {}
+        for exp in expenses:
+            category = exp.get("category", "שונות")
+            amount = float(exp.get("amount", 0))
+            totals[category] = totals.get(category, 0.0) + amount
+        return totals
 
-            feedback = self._get_expense_feedback(sender_name, expense_data.category, expense_data.amount)
-            return f"✅ נרשם: *{expense_data.item}* בסך *{expense_data.amount} ש\"ח* ({expense_data.category})\n{feedback}"
+    def _budget_status_emoji(self, spent: float, limit: float) -> str:
+        if limit <= 0:
+            return "⚪"
+        ratio = spent / limit
+        if ratio >= 1:
+            return "🔴"
+        if ratio >= 0.7:
+            return "🟡"
+        return "🟢"
+
+    # ---------- הוצאה חדשה ----------
+
+    def _handle_new_expense(self, parsed: ParsedMessage) -> str:
+        """טיפול בהוצאה חדשה: שמירה ב-DB, פידבק אישי, ותזכורת תקציב אם רלוונטי"""
+        try:
+            if not parsed.item or parsed.amount is None or not parsed.category:
+                return "לא הצלחתי להבין את פרטי ההוצאה. אפשר לנסח מחדש? (למשל: \"חלב וביצים ב-25 ש\"ח\")"
+
+            self.db.save_expense(parsed)
+
+            lines = [f"✅ נרשם: *{parsed.item}* בסך *{parsed.amount} ש\"ח* ({parsed.category})"]
+            lines.append(self._get_expense_feedback(parsed.user, parsed.category, parsed.amount))
+
+            budget_nudge = self._get_budget_nudge(parsed.category)
+            if budget_nudge:
+                lines.append(budget_nudge)
+
+            return "\n".join(lines)
         except Exception as e:
             print(f"❌ שגיאה בעיבוד הוצאה: {e}")
             return "משהו השתבש בניסיון לרשום את ההוצאה."
 
-    def _get_role(self, sender_name: str) -> str:
+    def _get_budget_nudge(self, category: str) -> Optional[str]:
+        """תזכורת יזומה כשמתקרבים/חורגים מהתקציב - חישוב Python בלבד, בלי עלות AI נוספת"""
+        budgets = self.db.get_budgets()
+        limit = budgets.get(category)
+        if not limit:
+            return None
+
+        current_month = datetime.datetime.now().strftime("%Y-%m")
+        spent = self._spend_by_category(current_month).get(category, 0.0)
+        ratio = spent / limit if limit else 0
+
+        if ratio >= 1:
+            return f"🔴 שימו לב: חרגתם מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
+        if ratio >= 0.9:
+            return f"🔴 שימו לב: זה כבר {ratio * 100:.0f}% מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
+        if ratio >= 0.7:
+            return f"🟡 {ratio * 100:.0f}% מהתקציב ל{category} כבר נוצל החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
+        return None
+
+    def _get_role(self, sender_name: Optional[str]) -> str:
         """זיהוי בסיסי מי כתב - אפרת, דניאל, או מישהו אחר - לפי השם שמגיע מוואטסאפ"""
         name = (sender_name or "")
         if "אפרת" in name:
@@ -84,7 +143,7 @@ class BotCore:
             return "daniel"
         return "other"
 
-    def _get_expense_feedback(self, sender_name: str, category: str, amount: float) -> str:
+    def _get_expense_feedback(self, sender_name: Optional[str], category: str, amount: float) -> str:
         """פידבק קליל על ההוצאה - הבוט קצת נוטה לצד אפרת :)"""
         role = self._get_role(sender_name)
 
@@ -102,26 +161,87 @@ class BotCore:
 
         return "כל הכבוד! 👏"
 
+    # ---------- תקציבים ----------
+
+    def _handle_budget_set(self, parsed: ParsedMessage) -> str:
+        if not parsed.category or parsed.amount is None:
+            return "לא הצלחתי להבין באיזו קטגוריה ובאיזה סכום לקבוע את התקציב. אפשר לכתוב למשל: \"תגדיר תקציב סופר 1500\"?"
+
+        try:
+            self.db.upsert_budget(parsed.category, parsed.amount, parsed.user)
+            return f"✅ התקציב ל*{parsed.category}* עודכן ל-*{parsed.amount:.0f} ש\"ח* לחודש."
+        except Exception as e:
+            print(f"❌ שגיאה בעדכון תקציב: {e}")
+            return "משהו השתבש בניסיון לעדכן את התקציב."
+
+    def _handle_budget_query(self, parsed: ParsedMessage) -> str:
+        budgets = self.db.get_budgets()
+        if not budgets:
+            return "עדיין לא הוגדרו תקציבים. אפשר להתחיל למשל עם: \"תגדיר תקציב סופר 1500\"."
+
+        current_month = datetime.datetime.now().strftime("%Y-%m")
+        spend_by_category = self._spend_by_category(current_month)
+
+        if parsed.category:
+            limit = budgets.get(parsed.category)
+            if not limit:
+                return f"לא הוגדר תקציב לקטגוריית *{parsed.category}*. אפשר להגדיר עם: \"תגדיר תקציב {parsed.category} <סכום>\"."
+
+            spent = spend_by_category.get(parsed.category, 0.0)
+            remaining = limit - spent
+            emoji = self._budget_status_emoji(spent, limit)
+            status_line = f'נותרו {remaining:.0f} ש"ח.' if remaining >= 0 else f'חרגתם ב-{abs(remaining):.0f} ש"ח.'
+            return f'{emoji} *{parsed.category}*: הוצאתם {spent:.0f} מתוך {limit:.0f} ש"ח החודש.\n{status_line}'
+
+        # אין קטגוריה ספציפית - סקירה כוללת
+        lines = ["📊 *סטטוס תקציבים לחודש הנוכחי:*\n"]
+        for category, limit in budgets.items():
+            spent = spend_by_category.get(category, 0.0)
+            emoji = self._budget_status_emoji(spent, limit)
+            lines.append(f"{emoji} {category}: {spent:.0f}/{limit:.0f} ש\"ח")
+
+        undefined_categories = [c for c in get_args(ExpenseCategory) if c not in budgets]
+        if undefined_categories:
+            lines.append(f"\nללא תקציב מוגדר: {', '.join(undefined_categories)}")
+
+        return "\n".join(lines)
+
+    # ---------- סיכום חודשי ----------
+
     def _handle_summary_request(self, month_str: str) -> str:
-        """שליפת הנתונים מ-Supabase ובניית הודעת סיכום מעוצבת"""
+        """שליפת הנתונים מ-Supabase ובניית הודעת סיכום מעוצבת, כולל השוואה לתקציב שהוגדר"""
         expenses = self.db.get_monthly_summary(month_str)
-        
+
         if not expenses:
             return f"לא מצאתי הוצאות רשומות עבור חודש {month_str}."
-            
-        # בניית הודעת הטקסט בצורה מרוכזת ומעוצבת לוואטסאפ
+
+        budgets = self.db.get_budgets()
+        spend_by_category: dict = {}
+
         response_lines = [f"📊 *סיכום הוצאות לחודש {month_str}:*\n"]
         total_amount = 0.0
-        
+
         for exp in expenses:
             item = exp.get("item", "פריט")
             amount = float(exp.get("amount", 0))
             category = exp.get("category", "כללי")
             user = exp.get("user_name", "לא ידוע")
-            
+
             total_amount += amount
+            spend_by_category[category] = spend_by_category.get(category, 0.0) + amount
             response_lines.append(f"• *{item}* ({category}): {amount:.2f} ש\"ח | מאת: {user}")
-            
+
+        if budgets:
+            budget_lines = []
+            for category, spent in spend_by_category.items():
+                limit = budgets.get(category)
+                if limit:
+                    emoji = self._budget_status_emoji(spent, limit)
+                    budget_lines.append(f"{emoji} {category}: {spent:.0f} מתוך {limit:.0f} ש\"ח")
+            if budget_lines:
+                response_lines.append("\n📁 *לפי קטגוריה מול תקציב:*")
+                response_lines.extend(budget_lines)
+
         response_lines.append(f"\n💰 *סך הכל החודש:* {total_amount:.2f} ש\"ח")
         response_lines.append(self._get_date_feedback(month_str, total_amount))
 
@@ -148,3 +268,40 @@ class BotCore:
         if progress < 0.4:
             return "📅 עדיין מוקדם בחודש, יש זמן לשפר את הקצב אם צריך."
         return "📅 אתם באמצע החודש, תמשיכו לעקוב אחרי ההוצאות."
+
+    # ---------- שאלות פיננסיות כלליות ----------
+
+    def _build_finance_context(self) -> str:
+        """מחרוזת עובדות אמיתיות (מספרים מה-DB בלבד) שמוזרקת לפרומפט - כדי שה-AI לעולם לא ימציא סכומים"""
+        current_month = datetime.datetime.now().strftime("%Y-%m")
+        spend_by_category = self._spend_by_category(current_month)
+        budgets = self.db.get_budgets()
+        total_spent = sum(spend_by_category.values())
+
+        lines = [f"חודש נוכחי: {current_month}", f'סך הוצאות החודש: {total_spent:.0f} ש"ח']
+        if spend_by_category:
+            lines.append("הוצאות לפי קטגוריה:")
+            for category, spent in spend_by_category.items():
+                limit = budgets.get(category)
+                if limit:
+                    lines.append(f'- {category}: {spent:.0f} ש"ח (תקציב: {limit:.0f} ש"ח, נותרו {limit - spent:.0f} ש"ח)')
+                else:
+                    lines.append(f'- {category}: {spent:.0f} ש"ח (אין תקציב מוגדר)')
+        else:
+            lines.append("אין הוצאות רשומות החודש עדיין.")
+
+        return "\n".join(lines)
+
+    def _handle_general_question(self, parsed: ParsedMessage) -> str:
+        try:
+            context = self._build_finance_context()
+            question = parsed.question or ""
+            return self.ai.answer_finance_question(question, context)
+        except Exception as e:
+            print(f"❌ שגיאה במענה על שאלה פיננסית: {e}")
+            return "משהו השתבש בניסיון לענות. אפשר לנסות שוב?"
+
+    # ---------- שיחת חולין ----------
+
+    def _handle_chitchat(self) -> str:
+        return random.choice(CHITCHAT_REPLIES)

@@ -38,6 +38,35 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ שגיאה בשמירת הנתונים ב-Supabase: {e}")
 
+    def get_budgets(self):
+        """שליפת התקציבים המוגדרים לכל קטגוריה. מחזיר {} בשקט אם הטבלה עדיין לא קיימת/ריקה."""
+        if not self.supabase:
+            return {}
+
+        try:
+            response = self.supabase.table("budgets").select("category, monthly_limit").execute()
+            return {row["category"]: float(row["monthly_limit"]) for row in response.data}
+        except Exception as e:
+            print(f"⚠️ לא ניתן לשלוף תקציבים (ייתכן שהטבלה 'budgets' עדיין לא נוצרה ב-Supabase): {e}")
+            return {}
+
+    def upsert_budget(self, category: str, amount: float, updated_by: str) -> None:
+        """קביעה/עדכון של תקציב חודשי לקטגוריה (upsert לפי category)."""
+        if not self.supabase:
+            print("❌ שגיאה: בסיס הנתונים לא מחובר.")
+            return
+
+        try:
+            data = {
+                "category": category,
+                "monthly_limit": float(amount),
+                "updated_by": updated_by,
+            }
+            self.supabase.table("budgets").upsert(data).execute()
+            print(f"💾 תקציב עודכן בהצלחה ב-Supabase: {category} -> {amount}")
+        except Exception as e:
+            print(f"❌ שגיאה בעדכון תקציב ב-Supabase: {e}")
+
     def get_monthly_summary(self, month_str):
         """שליפת כל ההוצאות לחודש מסוים (בפורמט YYYY-MM)"""
         if not self.supabase:
