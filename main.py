@@ -88,8 +88,7 @@ def send_whatsapp_message(chat_id: str, text: str):
         print("[שגיאה]: פרטי GREEN_INSTANCE_ID או GREEN_API_TOKEN חסרים במערכת.")
         return
 
-    url = f"https://api.green-api.com/waInstance{GREEN_INSTANCE_ID}/sendMessage/{GREEN_API_TOKEN}"
-    
+    url = f"https://7107.api.greenapi.com/waInstance{GREEN_INSTANCE_ID}/sendMessage/{GREEN_API_TOKEN}"    
     payload = {
         "chatId": chat_id,
         "message": text
