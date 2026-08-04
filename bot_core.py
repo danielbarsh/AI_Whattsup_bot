@@ -12,9 +12,10 @@ GREETING_KEYWORDS = [
     "מה אתה עושה", "מה אפשר", "איך זה עובד", "hello", "hi", "help",
 ]
 
-# הודעת היכרות מלאה - מוצגת כשמזהים ברכה/פנייה ראשונית, כדי שיהיה ברור מה אפשר לעשות עם הבוט
-ONBOARDING_MESSAGE = (
-    "היי! 👋 אני *הבנקאי האישי* שלכם - כאן כדי לנהל את ההוצאות והתקציב של הבית. הנה מה שאני יודע לעשות:\n\n"
+# גוף הודעת ההיכרות המלאה - מוצג כשמזהים ברכה/פנייה ראשונית, כדי שיהיה ברור מה אפשר לעשות עם הבוט.
+# שימו לב: בכל *הדגשה* יש רווח/סימן פיסוק לפני ואחרי הכוכביות (לא צמוד לאות עברית) - אחרת וואטסאפ לא יציג את זה מודגש.
+ONBOARDING_BODY = (
+    "אני *הבנקאי האישי* שלכם - כאן כדי לנהל את ההוצאות והתקציב של הבית. הנה מה שאני יודע לעשות:\n\n"
     "🧾 *לרשום הוצאה* - תכתבו מה קניתם ובכמה, בשפה חופשית:\n"
     "׳חלב וביצים ב-25 ש\"ח׳ • ׳מילאתי דלק ב-250׳\n\n"
     "📁 *לקבוע תקציב חודשי לקטגוריה*:\n"
@@ -35,12 +36,50 @@ CHITCHAT_REPLIES = [
     "😊 אם צריך תזכורת למה אני יודע לעשות, פשוט תכתבו \"עזרה\".",
 ]
 
-# פידבק חיובי קבוע שדניאל תמיד יקבל כשאפרת רושמת הוצאה - הבוט קצת נוטה לצדה :)
+# תשובות חולין חמות במיוחד לאפרת - קצת יותר כיף ואישי מהגרסה הרגילה
+EFRAT_CHITCHAT_REPLIES = [
+    "בשמחה אפרתי! 😊 תמיד כיף לעזור לך.",
+    "🙌 בכל רגע בשבילך, את יודעת.",
+    "😍 את והתקציב - הצוות הכי טוב שיש.",
+    "💕 תמיד שמח לשמוע ממך.",
+]
+
+# פידבק חיובי קבוע שאפרת תמיד תקבל כשהיא רושמת הוצאה - הבוט קצת נוטה לצדה :)
 EFRAT_COMPLIMENTS = [
     "איזה תותחית! 💪",
     "אפרתי, קנייה מוצדקת לגמרי! 🙌",
     "ברור שזה היה שווה כל שקל 😍",
+    "טעם מעולה כרגיל 👑",
+    "את פשוט יודעת לקנות נכון ✨",
+    "הבית הזה בר מזל שיש לו אותך 💖",
+    "מאה אחוז שהיה שווה את זה 🥰",
+    "קנייה של אלופה! 🏆",
+    "אין עליך, כרגיל 😎",
+    "החלטה מצוינת, כמו תמיד 🌟",
+    "רשמתי בהנאה מיוחדת 😄",
+    "וואו, איזה טעם! 👏",
+    "זה בדיוק מה שהיה צריך 💯",
+    "כל הכבוד יפהפייה 😘",
 ]
+
+# מחמאות ספציפיות לאפרת לפי קטגוריה - עדיפות על פני הרשימה הכללית כשיש התאמה
+EFRAT_CATEGORY_COMPLIMENTS = {
+    "ביגוד": [
+        "בגד חדש = אושר מיידי! 👗✨",
+        "תמיד יודעת לבחור הכי טוב 👠",
+        "וואו, סטייל ברמה אחרת 😍",
+    ],
+    "בילויים": [
+        "מגיע לך כל רגע כיף! 🎉",
+        "לפנק את עצמך זו תמיד החלטה נכונה 💃",
+        "תיהני, מגיע לך! 🥳",
+    ],
+    "מסעדות": [
+        "ערב טוב = החלטה מעולה 🍽️😋",
+        "מגיע לך לפנק את עצמך 🥂",
+        "בתיאבון יפהפייה 😍",
+    ],
+}
 
 # סף סכום (בש"ח) שמעליו הוצאה בקטגוריה נחשבת "קצת יקרה". בריאות לא נשפטת בכלל.
 CATEGORY_THRESHOLDS = {
@@ -94,7 +133,7 @@ class BotCore:
             return self._handle_budget_query(parsed)
         if parsed.intent == "general_question":
             return self._handle_general_question(parsed)
-        return self._handle_chitchat(text)
+        return self._handle_chitchat(text, sender_name)
 
     def _spend_by_category(self, month_str: str) -> dict:
         """סך ההוצאות של חודש נתון, מקובץ לפי קטגוריה - מבוסס על אותה שליפה שמשרתת גם את הסיכום"""
@@ -129,7 +168,7 @@ class BotCore:
             lines = [f"✅ נרשם: *{parsed.item}* בסך *{parsed.amount} ש\"ח* ({parsed.category})"]
             lines.append(self._get_expense_feedback(parsed.user, parsed.category, parsed.amount))
 
-            budget_nudge = self._get_budget_nudge(parsed.category)
+            budget_nudge = self._get_budget_nudge(parsed.category, parsed.user)
             if budget_nudge:
                 lines.append(budget_nudge)
 
@@ -138,7 +177,7 @@ class BotCore:
             print(f"❌ שגיאה בעיבוד הוצאה: {e}")
             return "משהו השתבש בניסיון לרשום את ההוצאה."
 
-    def _get_budget_nudge(self, category: str) -> Optional[str]:
+    def _get_budget_nudge(self, category: str, sender_name: Optional[str]) -> Optional[str]:
         """תזכורת יזומה כשמתקרבים/חורגים מהתקציב - חישוב Python בלבד, בלי עלות AI נוספת"""
         budgets = self.db.get_budgets()
         limit = budgets.get(category)
@@ -148,12 +187,19 @@ class BotCore:
         current_month = datetime.datetime.now().strftime("%Y-%m")
         spent = self._spend_by_category(current_month).get(category, 0.0)
         ratio = spent / limit if limit else 0
+        role = self._get_role(sender_name)
 
         if ratio >= 1:
+            if role == "efrat":
+                return f'🌸 סטטוס: כבר {spent:.0f} מתוך {limit:.0f} ש"ח בתקציב {category} החודש - אבל את שווה את זה בכל מקרה 😘'
             return f"🔴 שימו לב: חרגתם מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         if ratio >= 0.9:
+            if role == "efrat":
+                return f'💕 עוד קצת ומיצינו את התקציב ל{category} ({spent:.0f}/{limit:.0f} ש"ח) - אבל מגיע לך 😉'
             return f"🔴 שימו לב: זה כבר {ratio * 100:.0f}% מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         if ratio >= 0.7:
+            if role == "efrat":
+                return f'🙂 {ratio * 100:.0f}% מהתקציב ל{category} נוצל החודש ({spent:.0f}/{limit:.0f} ש"ח) - קצב מעולה!'
             return f"🟡 {ratio * 100:.0f}% מהתקציב ל{category} כבר נוצל החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         return None
 
@@ -170,8 +216,11 @@ class BotCore:
         """פידבק קליל על ההוצאה - הבוט קצת נוטה לצד אפרת :)"""
         role = self._get_role(sender_name)
 
-        # לאפרת תמיד יש מחמאה, לא משנה מה קנתה
+        # לאפרת תמיד יש מחמאה, לא משנה מה קנתה - עם עדיפות למחמאה ספציפית לקטגוריה אם יש
         if role == "efrat":
+            category_options = EFRAT_CATEGORY_COMPLIMENTS.get(category)
+            if category_options:
+                return random.choice(category_options)
             return random.choice(EFRAT_COMPLIMENTS)
 
         # הוצאות בריאות לא נשפטות בכלל
@@ -192,7 +241,7 @@ class BotCore:
 
         try:
             self.db.upsert_budget(parsed.category, parsed.amount, parsed.user)
-            return f"✅ התקציב ל*{parsed.category}* עודכן ל-*{parsed.amount:.0f} ש\"ח* לחודש."
+            return f'✅ התקציב עבור *{parsed.category}* עודכן ל-*{parsed.amount:.0f} ש"ח* לחודש.'
         except Exception as e:
             print(f"❌ שגיאה בעדכון תקציב: {e}")
             return "משהו השתבש בניסיון לעדכן את התקציב."
@@ -319,15 +368,28 @@ class BotCore:
         try:
             context = self._build_finance_context()
             question = parsed.question or ""
-            return self.ai.answer_finance_question(question, context)
+            return self.ai.answer_finance_question(question, context, sender_name=parsed.user or "")
         except Exception as e:
             print(f"❌ שגיאה במענה על שאלה פיננסית: {e}")
             return "משהו השתבש בניסיון לענות. אפשר לנסות שוב?"
 
     # ---------- שיחת חולין ----------
 
-    def _handle_chitchat(self, text: str) -> str:
+    def _build_onboarding_message(self, sender_name: Optional[str]) -> str:
+        role = self._get_role(sender_name)
+        if role == "efrat":
+            intro = "היי אפרתי המהממת! 😍💕 איזה כיף שאת כאן."
+        elif role == "daniel":
+            intro = "היי דניאל! 👋"
+        else:
+            intro = "היי! 👋"
+        return f"{intro} {ONBOARDING_BODY}"
+
+    def _handle_chitchat(self, text: str, sender_name: Optional[str]) -> str:
         normalized = (text or "").strip().lower()
         if any(keyword in normalized for keyword in GREETING_KEYWORDS):
-            return ONBOARDING_MESSAGE
+            return self._build_onboarding_message(sender_name)
+
+        if self._get_role(sender_name) == "efrat":
+            return random.choice(EFRAT_CHITCHAT_REPLIES)
         return random.choice(CHITCHAT_REPLIES)
