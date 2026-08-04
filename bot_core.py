@@ -241,7 +241,7 @@ class BotCore:
 
         try:
             self.db.upsert_budget(parsed.category, parsed.amount, parsed.user)
-            return f'✅ התקציב עבור *{parsed.category}* עודכן ל-*{parsed.amount:.0f} ש"ח* לחודש.'
+            return f'✅ התקציב עבור *{parsed.category}* עודכן ל- *{parsed.amount:.0f} ש"ח* לחודש.'
         except Exception as e:
             print(f"❌ שגיאה בעדכון תקציב: {e}")
             return "משהו השתבש בניסיון לעדכן את התקציב."
