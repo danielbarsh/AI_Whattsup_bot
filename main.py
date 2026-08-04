@@ -55,9 +55,9 @@ scheduler = BackgroundScheduler(timezone="Asia/Jerusalem")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    job = scheduler.add_job(
+    job = scheduler.add_job( 
         send_daily_reminder,
-        CronTrigger(hour=15, minute=10, timezone="Asia/Jerusalem"),
+        CronTrigger(hour=15, minute=18, timezone="Asia/Jerusalem"),
         id="daily_expense_reminder",
         replace_existing=True,
     )
