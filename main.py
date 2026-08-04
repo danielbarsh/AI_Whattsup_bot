@@ -82,6 +82,10 @@ async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: Backg
         
     return {"status": "success"}
 
+@app.get('/health')
+async def health_check():
+    return {"status": "healthy"}
+
 def handle_async_response(text: str, sender: str, chat_id: str):
     reply = bot_core.process_message(text, sender)
     
