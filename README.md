@@ -1,26 +1,26 @@
-# 💰 הבנקאי האישי — בוט וואטסאפ לניהול הוצאות ותקציב
+# 💰 The Personal Banker — WhatsApp Expense & Budget Bot
 
-בוט וואטסאפ שמנהל את ההוצאות והתקציב המשותפים של הבית. כותבים לו הודעה רגילה בעברית — הוא מבין, שומר, ומדבר בחזרה.
+A WhatsApp bot that manages a household's shared expenses and budget. Send it a plain message in Hebrew — it understands, saves, and talks back.
 
 ```
-"קניתי חלב וביצים ב-25 ש"ח"        →  ✅ נרשם, עם פידבק אישי ותזכורת תקציב אם צריך
-"תגדיר תקציב סופר 1500"            →  📁 תקציב חודשי לקטגוריה, ניתן לעדכון בכל רגע
-"כמה נשאר לי בתקציב סופר?"          →  🟢🟡🔴 סטטוס מדויק מול הנתונים האמיתיים
-"כדאי לנו לצמצם על מסעדות?"         →  💬 תשובה פיננסית מבוססת נתונים, לא ניחוש
-"סיכום"                            →  📊 דוח חודשי מלא, כולל השוואה לתקציב
+"קניתי חלב וביצים ב-25 ש"ח"        →  ✅ Logged, with personal feedback and a budget nudge if needed
+"תגדיר תקציב סופר 1500"            →  📁 Monthly budget for a category, updatable anytime
+"כמה נשאר לי בתקציב סופר?"          →  🟢🟡🔴 Exact status against real data
+"כדאי לנו לצמצם על מסעדות?"         →  💬 Financial answer grounded in real data, never a guess
+"סיכום"                            →  📊 Full monthly report, including budget comparison
 ```
 
-## ✨ יכולות
+## ✨ Features
 
-- **רישום הוצאות בשפה חופשית** — AI מחלץ פריט, סכום וקטגוריה מכל ניסוח, בלי פורמט קבוע.
-- **תקציבים לפי קטגוריה** — נקבעים ומתעדכנים ישירות בוואטסאפ, בלי צורך בממשק חיצוני.
-- **תזכורות יזומות** — כשהוצאה מקרבת אתכם ל-70%/90%+ מהתקציב, הבוט מציין זאת מיד באישור, לא רק כשמבקשים דוח.
-- **מענה על שאלות פיננסיות** — טיפים, ניתוח הרגלי הוצאה והמלצות, מבוססים תמיד על הנתונים האמיתיים של הבית ולא על ניחוש.
-- **סיכום חודשי** — פירוט הוצאות מלא מול תקציב, עם פידבק לפי שלב החודש.
-- **פרסונליות** — הבוט מזהה מי כתב ומגיב בהתאם (כולל איזון עדין לטובת אפרת 😉).
-- **חסין-תקלות** — הודעה לא ברורה, שאלה לא-פיננסית, או תקלת AI לא מפילות את הבוט — הוא תמיד עונה משהו הגיוני.
+- **Free-form expense logging** — AI extracts item, amount, and category from any phrasing, no fixed format required.
+- **Per-category budgets** — set and updated directly over WhatsApp, no external dashboard needed.
+- **Proactive nudges** — when an expense pushes you to 70%/90%+ of a category's budget, the bot flags it immediately in the confirmation, not just when a report is requested.
+- **Financial Q&A** — tips, spending-habit analysis, and recommendations, always grounded in the household's real data, never invented.
+- **Monthly summary** — full expense breakdown against budget, with feedback tuned to how far into the month you are.
+- **Personality** — the bot recognizes who's writing and responds accordingly (including a gentle bias in Efrat's favor 😉).
+- **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
 
-## 🧠 איך זה עובד
+## 🧠 How it works
 
 ```
 WhatsApp ──► Whapi Webhook ──► FastAPI (main.py)
@@ -30,52 +30,53 @@ WhatsApp ──► Whapi Webhook ──► FastAPI (main.py)
                                      │
                     ┌────────────────┼─────────────────┐
                     ▼                ▼                  ▼
-             מילת מפתח חינם    קריאת AI אחת         תוצאה: תשובה
-             ("סיכום"/"דוח")    שמסווגת כוונה        מנוסחת תמיד
-                                (gpt-4o-mini)         ב-Python מהנתונים
-                                     │                 האמיתיים ב-DB
-        ┌───────────┬───────────────┼──────────────┐  (לא ע"י AI)
+             Free keyword       One AI call          Result: reply
+             match ("סיכום")    that classifies      always composed
+                                intent                in Python from
+                                (gpt-4o-mini)          real DB data
+                                     │                 (never by AI)
+        ┌───────────┬───────────────┼──────────────┐
         ▼           ▼               ▼              ▼
-     הוצאה      קביעת/שאילתת    שאלה פיננסית    שיחת חולין
-                   תקציב        כללית (קריאת
-                                 AI שנייה, קצרה)
+     expense    budget set/     general finance   chitchat
+                 query          question (2nd,
+                                 short AI call)
 ```
 
-**עקרון מרכזי — חיסכון בקרדיטים:** רוב ההודעות (הוצאה, תקציב, סיכום) עוברות **קריאת AI אחת בלבד**, וכל מספר כסף בתשובה (סכום, יתרת תקציב, סיכום) מחושב תמיד ב-Python ישירות מה-DB — ה-AI לעולם לא "ממציא" סכומים. קריאה שנייה קורית רק בשאלות פיננסיות פתוחות באמת, עם תשובה קצרה וממוקדת.
+**Core principle — keeping AI costs down:** most messages (expense, budget, summary) go through **exactly one AI call**, and every money figure in a reply (amount, remaining budget, summary total) is always computed in Python straight from the DB — the AI never "invents" numbers. A second call only happens for genuinely open-ended financial questions, and even then the reply is short and focused.
 
-## 🛠️ טכנולוגיות
+## 🛠️ Tech stack
 
-| רכיב | טכנולוגיה |
+| Component | Technology |
 |---|---|
-| שרת Webhook | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn |
-| הבנה בשפה טבעית | [OpenAI](https://platform.openai.com/) `gpt-4o-mini` (structured outputs) |
-| בסיס נתונים | [Supabase](https://supabase.com/) (Postgres) |
-| שער וואטסאפ | [Whapi](https://whapi.cloud/) |
-| ולידציה ומודלים | [Pydantic](https://docs.pydantic.dev/) |
+| Webhook server | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn |
+| Natural language understanding | [OpenAI](https://platform.openai.com/) `gpt-4o-mini` (structured outputs) |
+| Database | [Supabase](https://supabase.com/) (Postgres) |
+| WhatsApp gateway | [Whapi](https://whapi.cloud/) |
+| Validation & models | [Pydantic](https://docs.pydantic.dev/) |
 
-## 📁 מבנה הפרויקט
+## 📁 Project structure
 
 ```
-main.py         # שרת FastAPI, קליטת webhook משוואטסאפ ושליחת תשובות
-bot_core.py      # הלוגיקה המרכזית: ניתוב לפי כוונה, כל ה-handlers והפרסונליות
-ai_engine.py     # אינטגרציית OpenAI - סיווג כוונה + מענה פיננסי
-database.py      # שכבת גישה ל-Supabase (הוצאות ותקציבים)
-models.py        # מודלי Pydantic (ParsedMessage, קטגוריות)
+main.py         # FastAPI server, WhatsApp webhook intake and reply sending
+bot_core.py      # Core logic: intent routing, all handlers, and personality
+ai_engine.py     # OpenAI integration - intent classification + financial answers
+database.py      # Supabase access layer (expenses and budgets)
+models.py        # Pydantic models (ParsedMessage, categories)
 ```
 
-## 🚀 הרצה מקומית
+## 🚀 Running locally
 
-**דרישות**: Python 3.11+, חשבון Supabase, מפתח OpenAI API, חשבון Whapi.
+**Requirements**: Python 3.11+, a Supabase account, an OpenAI API key, a Whapi account.
 
 ```bash
-# התקנת תלויות (הפרויקט מנוהל עם uv)
+# Install dependencies (the project is managed with uv)
 uv sync
 
-# הגדרת משתני סביבה
-cp .env.example .env   # ולמלא בפועל
+# Set up environment variables
+cp .env.example .env   # then fill in real values
 ```
 
-צריך להגדיר ב-`.env`:
+Required in `.env`:
 
 ```
 OPENAI_API_KEY=...
@@ -84,7 +85,7 @@ SUPABASE_KEY=...
 WHAPI_TOKEN=...
 ```
 
-וב-Supabase, טבלת `expenses` (item, amount, category, user_name, date) וטבלת `budgets`:
+And in Supabase, an `expenses` table (item, amount, category, user_name, date) and a `budgets` table:
 
 ```sql
 create table budgets (
@@ -96,12 +97,12 @@ create table budgets (
 ```
 
 ```bash
-# הרצת השרת
+# Run the server
 uv run uvicorn main:app --reload
 ```
 
-חשוב לחבר את כתובת ה-`/webhook` להגדרות ה-Webhook ב-Whapi כדי שהודעות נכנסות יגיעו לבוט.
+Make sure to point Whapi's webhook settings at your `/webhook` URL so incoming messages reach the bot.
 
-## 🩺 מוניטורינג
+## 🩺 Monitoring
 
-`GET /health` — בדיקת תקינות בסיסית לשירות (מתאים לחיבור ל-uptime monitor).
+`GET /health` — basic health check endpoint (suitable for an uptime monitor).
