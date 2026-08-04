@@ -17,6 +17,7 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Proactive nudges** — when an expense pushes you to 70%/90%+ of a category's budget, the bot flags it immediately in the confirmation, not just when a report is requested.
 - **Financial Q&A** — tips, spending-habit analysis, and recommendations, always grounded in the household's real data, never invented.
 - **Monthly summary** — full expense breakdown against budget, with feedback tuned to how far into the month you are.
+- **Daily reminder** — a proactive nudge sent to the household's WhatsApp group every day at 15:00 Israel time, scheduled independently of the server's own timezone.
 - **Personality** — the bot recognizes who's writing and responds accordingly (including a gentle bias in Efrat's favor 😉).
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
 
@@ -53,6 +54,7 @@ WhatsApp ──► Whapi Webhook ──► FastAPI (main.py)
 | Database | [Supabase](https://supabase.com/) (Postgres) |
 | WhatsApp gateway | [Whapi](https://whapi.cloud/) |
 | Validation & models | [Pydantic](https://docs.pydantic.dev/) |
+| Scheduled reminder | [APScheduler](https://apscheduler.readthedocs.io/) (timezone-aware cron trigger) |
 
 ## 📁 Project structure
 
@@ -83,6 +85,7 @@ OPENAI_API_KEY=...
 SUPABASE_URL=...
 SUPABASE_KEY=...
 WHAPI_TOKEN=...
+REMINDER_CHAT_ID=...   # the shared WhatsApp group's chat_id, for the 15:00 daily reminder
 ```
 
 And in Supabase, an `expenses` table (item, amount, category, user_name, date) and a `budgets` table:
