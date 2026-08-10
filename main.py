@@ -4,8 +4,6 @@ from contextlib import asynccontextmanager
 
 import requests
 from fastapi import FastAPI, BackgroundTasks, Request
-from pydantic import BaseModel
-from typing import List, Optional
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -27,10 +25,11 @@ db_mgr = DatabaseManager()
 ai_mgr = FinanceAI(api_key=openai_key)
 bot_core = BotCore(db_manager=db_mgr, ai_manager=ai_mgr)
 
-WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "YOUR_WHAPI_TOKEN_HERE")
+# משתני הסביבה של Green-API
+GREEN_INSTANCE_ID = os.environ.get("GREEN_INSTANCE_ID", "")
+GREEN_API_TOKEN = os.environ.get("GREEN_API_TOKEN", "")
 
 # --- תזכורת יומית יזומה (לא בתגובה להודעה נכנסת) ---
-# chat_id של קבוצת הוואטסאפ המשותפת של דניאל ואפרת עם הבוט
 REMINDER_CHAT_ID = os.environ.get("REMINDER_CHAT_ID", "")
 
 DAILY_REMINDER_MESSAGES = [
@@ -49,8 +48,6 @@ def send_daily_reminder():
     print(f"[תזכורת יומית] שולח ל-{REMINDER_CHAT_ID}: {message}")
     send_whatsapp_message(REMINDER_CHAT_ID, message)
 
-# ה-timezone מוגדר במפורש ל-Asia/Jerusalem (לא לפי שעון השרת) - כדי שהתזכורת תמיד תישלח ב-15:00
-# לפי השעון הישראלי, כולל התאמה נכונה לשעון קיץ/חורף בישראל (שלא תמיד חופף לשעון הקיץ בארה"ב).
 scheduler = BackgroundScheduler(timezone="Asia/Jerusalem")
 
 @asynccontextmanager
@@ -62,56 +59,42 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.start()
-    # לוג ניתן לבדיקה מיד אחרי דיפלוי - בלי להמתין לשעת השליחה ובלי לבצע שליחה בפועל
     print(f"[תזמון פעיל] התזכורת היומית תישלח הבא ב-{job.next_run_time} (שעון ישראל)")
     yield
     scheduler.shutdown(wait=False)
 
-app = FastAPI(title="WhatsApp Expense Webhook", lifespan=lifespan)
+app = FastAPI(title="WhatsApp Expense Webhook (Green-API)", lifespan=lifespan)
 
-# --- התאמת ה-Pydantic Models למבנה המדויק והמלא של Whapi ---
-class TextObject(BaseModel):
-    body: str
-
-class MessageItem(BaseModel):
-    id: str
-    chat_id: str
-    from_me: bool
-    type: str
-    text: Optional[TextObject] = None
-    # השדה האמיתי שמחזיר Whapi עבור שם השולח (ה-pushname מוואטסאפ)
-    from_name: Optional[str] = None
-
-class WhapiWebhookPayload(BaseModel):
-    messages: Optional[List[MessageItem]] = None
-
-# --- ה-Endpoint לקבלת ההודעות ---
+# --- ה-Endpoint לקבלת ההודעות מ-Green-API ---
 @app.post("/webhook")
-async def whatsapp_webhook(payload: WhapiWebhookPayload, background_tasks: BackgroundTasks, request: Request):
-    """נקודת קצה לקבלת הודעות בוואטסאפ מ-Whapi"""
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    """נקודת קצה לקבלת הודעות בוואטסאפ מ-Green-API"""
+    try:
+        body = await request.json()
+    except Exception as e:
+        print(f"[שגיאת פילוס JSON]: {e}")
+        return {"status": "error", "message": "Invalid JSON"}
 
-    # הדפסת ה-JSON הגולמי לתוך ה-Logs של Render כדי שנוכל לדבג במקרה הצורך
-    raw_body = await request.json()
-    print(f"[Whapi Webhook Received Raw JSON]: {raw_body}")
+    print(f"[Green-API Webhook Received Raw JSON]: {body}")
 
-    if not payload.messages:
-        return {"status": "success", "detail": "No messages in payload"}
+    type_webhook = body.get("typeWebhook")
 
-    for msg in payload.messages:
-        if msg.from_me:
-            continue
+    # מעבדים רק אירועי הודעות נכנסות
+    if type_webhook == "incomingMessageReceived":
+        message_data = body.get("messageData", {})
+        sender_data = body.get("senderData", {})
 
-        if msg.type == "text" and msg.text:
-            message_text = msg.text.body
-            chat_id = msg.chat_id
+        # בדיקה שמדובר בהודעת טקסט נכנסת
+        type_message = message_data.get("typeMessage")
+        if type_message == "textMessage":
+            text_data = message_data.get("textMessageData", {})
+            message_text = text_data.get("textMessage", "")
+            chat_id = sender_data.get("chatId", "")
+            sender_name = sender_data.get("senderName") or "משתמש וואטסאפ"
 
-            # שליפת שם השולח מהשדה האמיתי שמחזיר Whapi
-            sender_name = msg.from_name or "משתמש וואטסאפ"
-
-            print(f"[עיבוד הודעה]: מאת={sender_name}, תוכן={message_text}, צ'אט={chat_id}")
-
-            # שליחה לטיפול ברקע
-            background_tasks.add_task(handle_async_response, message_text, sender_name, chat_id)
+            if message_text and chat_id:
+                print(f"[עיבוד הודעה]: מאת={sender_name}, תוכן={message_text}, צ'אט={chat_id}")
+                background_tasks.add_task(handle_async_response, message_text, sender_name, chat_id)
 
     return {"status": "success"}
 
@@ -127,20 +110,24 @@ def handle_async_response(text: str, sender: str, chat_id: str):
         send_whatsapp_message(chat_id, reply)
 
 def send_whatsapp_message(chat_id: str, text: str):
-    url = "https://gate.whapi.cloud/messages/text"
+    """שליחת הודעה דרך Green-API (שרת 7107)"""
+    if not GREEN_INSTANCE_ID or not GREEN_API_TOKEN:
+        print("[שגיאה]: פרטי GREEN_INSTANCE_ID או GREEN_API_TOKEN חסרים במערכת.")
+        return
+
+    url = f"https://7107.api.greenapi.com/waInstance{GREEN_INSTANCE_ID}/sendMessage/{GREEN_API_TOKEN}"
     headers = {
-        "Authorization": f"Bearer {WHAPI_TOKEN}",
         "Content-Type": "application/json"
     }
     payload = {
-        "to": chat_id,
-        "body": text
+        "chatId": chat_id,
+        "message": text
     }
     try:
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
     except Exception as e:
-        print(f"שגיאה בשליחת הודעה לוואטסאפ: {e}")
+        print(f"שגיאה בשליחת הודעה לוואטסאפ דרך Green-API: {e}")
 
 if __name__ == "__main__":
     import uvicorn
