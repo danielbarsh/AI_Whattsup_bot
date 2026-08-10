@@ -18,6 +18,7 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Financial Q&A** — tips, spending-habit analysis, and recommendations, always grounded in the household's real data, never invented.
 - **Monthly summary** — full expense breakdown against budget, with feedback tuned to how far into the month you are.
 - **Daily reminder** — a proactive nudge sent to every active WhatsApp group (per `group_settings`) every day at 15:00 Israel time, scheduled independently of the server's own timezone.
+- **Groups only** — the bot ignores every private/1:1 chat outright (no processing, no reply, not even the onboarding flow). It only ever responds inside WhatsApp groups.
 - **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks for each partner's name and phone number before doing anything else. Nothing else works in that group until both are registered.
 - **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉.
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.

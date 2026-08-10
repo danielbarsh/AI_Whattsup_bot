@@ -52,6 +52,11 @@ class WebhookRouter:
         if not message_text or not chat_id:
             return
 
+        # הבוט פועל רק בקבוצות - כל שיחה פרטית (chat_id שלא מסתיים ב-@g.us) נחסמת כליל, בלי עיבוד ובלי תשובה
+        if not self.group_setup_service.is_group_chat(chat_id):
+            print(f"[חסימה] הודעה משיחה פרטית נחסמה - הבוט פועל רק בקבוצות רשומות. צ'אט={chat_id}")
+            return
+
         print(f"[עיבוד הודעה]: מאת={sender_name}, תוכן={message_text}, צ'אט={chat_id}")
         background_tasks.add_task(self._process_and_reply, message_text, sender_name, chat_id, sender_phone)
 
@@ -61,13 +66,12 @@ class WebhookRouter:
         return sender_id.split("@")[0] if sender_id else ""
 
     def _process_and_reply(self, text: str, sender_name: str, chat_id: str, sender_phone: str):
-        # קבוצה חדשה/לא רשומה - חוסמים את כל הטיפול הרגיל עד שמוגדרים מספרי הטלפון של שני בני הזוג
-        if self.group_setup_service.is_group_chat(chat_id):
-            setup_reply = self.group_setup_service.intercept(chat_id, text)
-            if setup_reply is not None:
-                print(f"[הרשמת קבוצה] שולח ל-{chat_id}: {setup_reply}")
-                self.whatsapp_client.send_message(chat_id, setup_reply)
-                return
+        # מגיעים לכאן רק מקבוצות (ר' _route_incoming_message) - קבוצה שעדיין לא סיימה הרשמה נבלמת כאן עד שמוגדרים שם+טלפון לשני בני הזוג
+        setup_reply = self.group_setup_service.intercept(chat_id, text)
+        if setup_reply is not None:
+            print(f"[הרשמת קבוצה] שולח ל-{chat_id}: {setup_reply}")
+            self.whatsapp_client.send_message(chat_id, setup_reply)
+            return
 
         reply = self.bot_core.process_message(text, sender_name, chat_id=chat_id, sender_phone=sender_phone)
         if reply:
