@@ -65,6 +65,32 @@ class DatabaseManager:
             print(f"❌ שגיאה בעדכון תקציב ב-Supabase: {e}")
             raise
 
+    def get_group_setup(self, chat_id: str):
+        """שליפת מצב ההרשמה של קבוצה (מספרי טלפון + status). מחזיר None אם הקבוצה טרם נרשמה בכלל."""
+        if not self.supabase:
+            return None
+
+        try:
+            response = self.supabase.table("group_settings").select("*").eq("chat_id", chat_id).limit(1).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            print(f"⚠️ לא ניתן לשלוף הגדרות קבוצה (ייתכן שהטבלה 'group_settings' עדיין לא נוצרה ב-Supabase): {e}")
+            return None
+
+    def upsert_group_setup(self, chat_id: str, **fields) -> None:
+        """יצירה/עדכון חלקי של מצב ההרשמה של קבוצה (chat_id + כל שילוב של male_phone/female_phone/status)"""
+        if not self.supabase:
+            print("❌ שגיאה: בסיס הנתונים לא מחובר.")
+            return
+
+        try:
+            data = {"chat_id": chat_id, **fields}
+            self.supabase.table("group_settings").upsert(data).execute()
+            print(f"💾 הגדרות קבוצה עודכנו בהצלחה ב-Supabase: {chat_id} -> {fields}")
+        except Exception as e:
+            print(f"❌ שגיאה בעדכון הגדרות קבוצה ב-Supabase: {e}")
+            raise
+
     def get_monthly_summary(self, month_str):
         """שליפת כל ההוצאות לחודש מסוים (בפורמט YYYY-MM)"""
         if not self.supabase:

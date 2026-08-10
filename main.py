@@ -11,6 +11,7 @@ from bot_core import BotCore
 from whatsapp_client import WhatsAppClient
 from webhook_router import WebhookRouter
 from reminder_service import ReminderService
+from group_setup import GroupSetupService
 
 
 def create_app() -> FastAPI:
@@ -30,7 +31,12 @@ def create_app() -> FastAPI:
         api_token=os.environ.get("GREEN_API_TOKEN", ""),
     )
 
-    webhook_router = WebhookRouter(bot_core=bot_core, whatsapp_client=whatsapp_client)
+    group_setup_service = GroupSetupService(db_manager=db_mgr)
+    webhook_router = WebhookRouter(
+        bot_core=bot_core,
+        whatsapp_client=whatsapp_client,
+        group_setup_service=group_setup_service,
+    )
     reminder_service = ReminderService(
         whatsapp_client=whatsapp_client,
         chat_id=os.environ.get("REMINDER_CHAT_ID", ""),

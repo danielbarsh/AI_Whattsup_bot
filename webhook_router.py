@@ -1,15 +1,17 @@
 from fastapi import APIRouter, BackgroundTasks, Request
 
 from bot_core import BotCore
+from group_setup import GroupSetupService
 from whatsapp_client import WhatsAppClient
 
 
 class WebhookRouter:
     """אחראי על ניתוב וטיפול בבקשות ה-Webhook הנכנסות מ-Green-API"""
 
-    def __init__(self, bot_core: BotCore, whatsapp_client: WhatsAppClient):
+    def __init__(self, bot_core: BotCore, whatsapp_client: WhatsAppClient, group_setup_service: GroupSetupService):
         self.bot_core = bot_core
         self.whatsapp_client = whatsapp_client
+        self.group_setup_service = group_setup_service
 
         self.router = APIRouter()
         self.router.add_api_route("/webhook", self.handle_webhook, methods=["POST"])
@@ -45,15 +47,29 @@ class WebhookRouter:
         message_text = text_data.get("textMessage", "")
         chat_id = sender_data.get("chatId", "")
         sender_name = sender_data.get("senderName") or "משתמש וואטסאפ"
+        sender_phone = self._extract_phone(sender_data.get("sender", ""))
 
         if not message_text or not chat_id:
             return
 
         print(f"[עיבוד הודעה]: מאת={sender_name}, תוכן={message_text}, צ'אט={chat_id}")
-        background_tasks.add_task(self._process_and_reply, message_text, sender_name, chat_id)
+        background_tasks.add_task(self._process_and_reply, message_text, sender_name, chat_id, sender_phone)
 
-    def _process_and_reply(self, text: str, sender: str, chat_id: str):
-        reply = self.bot_core.process_message(text, sender)
+    @staticmethod
+    def _extract_phone(sender_id: str) -> str:
+        """שליפת מספר הטלפון הגולמי מתוך מזהה השולח של Green-API (למשל '972501234567@c.us' -> '972501234567')"""
+        return sender_id.split("@")[0] if sender_id else ""
+
+    def _process_and_reply(self, text: str, sender_name: str, chat_id: str, sender_phone: str):
+        # קבוצה חדשה/לא רשומה - חוסמים את כל הטיפול הרגיל עד שמוגדרים מספרי הטלפון של שני בני הזוג
+        if self.group_setup_service.is_group_chat(chat_id):
+            setup_reply = self.group_setup_service.intercept(chat_id, text)
+            if setup_reply is not None:
+                print(f"[הרשמת קבוצה] שולח ל-{chat_id}: {setup_reply}")
+                self.whatsapp_client.send_message(chat_id, setup_reply)
+                return
+
+        reply = self.bot_core.process_message(text, sender_name, chat_id=chat_id, sender_phone=sender_phone)
         if reply:
             print(f"[שליחת הודעה לוואטסאפ ל-{chat_id}]:\n{reply}")
             self.whatsapp_client.send_message(chat_id, reply)

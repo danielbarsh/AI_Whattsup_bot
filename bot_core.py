@@ -99,8 +99,9 @@ class BotCore:
         self.db = db_manager
         self.ai = ai_manager
 
-    def process_message(self, text: str, sender_name: str) -> str:
+    def process_message(self, text: str, sender_name: Optional[str], chat_id: Optional[str] = None, sender_phone: Optional[str] = None) -> str:
         """הפונקציה המרכזית שאחראית לנתב בין כל סוגי ההודעות"""
+        sender_name = self._resolve_sender_name(sender_name, chat_id, sender_phone)
         lower_text = text.lower()
 
         # שכבה 0 (חינם): בדיקה אם מדובר בבקשת סיכום, בלי לגעת ב-AI בכלל
@@ -217,6 +218,22 @@ class BotCore:
         if "דניאל" in name:
             return "daniel"
         return "other"
+
+    def _resolve_sender_name(self, sender_name: Optional[str], chat_id: Optional[str], sender_phone: Optional[str]) -> Optional[str]:
+        """אם הקבוצה נרשמה עם מספרי הטלפון של בני הזוג (ר' group_setup.py) - מתאים את מספר השולח לשם הקבוע שלו,
+        כדי שכל לוגיקת הזיהוי הקיימת (_get_role) תמשיך לעבוד גם כשה-senderName מוואטסאפ שונה/חסר"""
+        if not chat_id or not sender_phone:
+            return sender_name
+
+        setup = self.db.get_group_setup(chat_id)
+        if not setup:
+            return sender_name
+
+        if setup.get("male_phone") == sender_phone:
+            return "דניאל"
+        if setup.get("female_phone") == sender_phone:
+            return "אפרת"
+        return sender_name
 
     def _get_expense_feedback(self, sender_name: Optional[str], category: str, amount: float) -> str:
         """פידבק קליל על ההוצאה - הבוט קצת נוטה לצד אפרת :)"""
