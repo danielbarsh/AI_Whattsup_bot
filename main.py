@@ -37,10 +37,7 @@ def create_app() -> FastAPI:
         whatsapp_client=whatsapp_client,
         group_setup_service=group_setup_service,
     )
-    reminder_service = ReminderService(
-        whatsapp_client=whatsapp_client,
-        chat_id=os.environ.get("REMINDER_CHAT_ID", ""),
-    )
+    reminder_service = ReminderService(whatsapp_client=whatsapp_client, db_manager=db_mgr)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

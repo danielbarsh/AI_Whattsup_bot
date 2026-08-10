@@ -7,15 +7,23 @@ from database import DatabaseManager
 # מספר טלפון תקין: ספרות בלבד (אחרי ניקוי), עם או בלי + מוביל, 9-15 ספרות
 _PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
+# סטטוסים ישנים משלב הקוד הקודם (שאל רק טלפונים, בלי שמות) - קבוצה שנתקעה שם מקבלת ריסט עדין להשלמת שמות
+_LEGACY_STATUSES = {"pending_male", "pending_female"}
+
 INTRO_MESSAGE = (
     "היי! 👋 אני *הבנקאי האישי* שלכם - בוט לניהול הוצאות ותקציב הבית בקבוצה הזו.\n\n"
     "לפני שנתחיל, אני צריך להכיר את שני בני הזוג כדי שאוכל להתאים לכל אחד את הפידבק שלו 🙂\n\n"
-    "📱 מה *מספר הטלפון של הגבר*? (למשל: 0501234567)"
+    "🙋‍♂️ מה *השם* של הגבר?"
 )
 
-ASK_FEMALE_MESSAGE = (
-    "קיבלתי, מעולה! ✅\n\n"
-    "📱 ועכשיו - מה *מספר הטלפון של האישה*? (למשל: 0501234567)"
+LEGACY_RESET_MESSAGE = (
+    "עדכנו קצת את תהליך ההרשמה כדי שאכיר אתכם גם בשם, לא רק במספר 🙂 בואו נעשה את זה שוב, זה ייקח רק רגע.\n\n"
+    + INTRO_MESSAGE
+)
+
+INVALID_NAME_MESSAGE = (
+    "הממ, זה לא נראה לי כמו שם 🤔\n"
+    "אפשר לכתוב רק את השם?"
 )
 
 INVALID_PHONE_MESSAGE = (
@@ -27,11 +35,9 @@ DUPLICATE_PHONE_MESSAGE = (
     "המספר הזה כבר נשמר בתור המספר של הגבר - אפשר לשלוח מספר אחר עבור האישה?"
 )
 
-SETUP_COMPLETE_MESSAGE = f"מושלם, הכל מוכן! 🎉 מעכשיו אני פה בשבילכם.\n\n{ONBOARDING_BODY}"
-
 
 class GroupSetupService:
-    """שער הרשמה: קבוצה חדשה חייבת לספק את מספרי הטלפון של שני בני הזוג לפני שהבוט מתחיל לפעול בה"""
+    """שער הרשמה: קבוצה חדשה חייבת לספק שם ומספר טלפון עבור כל אחד משני בני הזוג לפני שהבוט מתחיל לפעול בה"""
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
@@ -48,28 +54,64 @@ class GroupSetupService:
         setup = self.db.get_group_setup(chat_id)
 
         if setup is None:
-            self.db.upsert_group_setup(chat_id, status="pending_male")
+            self.db.upsert_group_setup(chat_id, status="pending_male_name")
             return INTRO_MESSAGE
 
         status = setup.get("status")
 
-        if status == "pending_male":
+        if status in _LEGACY_STATUSES:
+            # קבוצה שנרשמה תחת הגרסה הקודמת (טלפונים בלבד) ולא הספיקה לסיים - מתחילים מחדש כדי לאסוף גם שמות.
+            # מספרי הטלפון הישנים (אם נשמרו) לא נמחקים - רק ה-status מתאפס.
+            self.db.upsert_group_setup(chat_id, status="pending_male_name")
+            return LEGACY_RESET_MESSAGE
+
+        if status == "pending_male_name":
+            name = self._normalize_name(text)
+            if not name:
+                return INVALID_NAME_MESSAGE
+            self.db.upsert_group_setup(chat_id, male_name=name, status="pending_male_phone")
+            return f"נעים מאוד, {name}! 😊\n\n📱 ומה *מספר הטלפון* שלו? (למשל: 0501234567)"
+
+        if status == "pending_male_phone":
             phone = self._normalize_phone(text)
             if not phone:
                 return INVALID_PHONE_MESSAGE
-            self.db.upsert_group_setup(chat_id, male_phone=phone, status="pending_female")
-            return ASK_FEMALE_MESSAGE
+            self.db.upsert_group_setup(chat_id, male_phone=phone, status="pending_female_name")
+            return "קיבלתי, מעולה! ✅\n\n🙋‍♀️ ועכשיו - מה *השם* של האישה?"
 
-        if status == "pending_female":
+        if status == "pending_female_name":
+            name = self._normalize_name(text)
+            if not name:
+                return INVALID_NAME_MESSAGE
+            self.db.upsert_group_setup(chat_id, female_name=name, status="pending_female_phone")
+            return f"איזה כיף, {name}! 😊\n\n📱 ומה *מספר הטלפון* שלה? (למשל: 0501234567)"
+
+        if status == "pending_female_phone":
             phone = self._normalize_phone(text)
             if not phone:
                 return INVALID_PHONE_MESSAGE
             if phone == setup.get("male_phone"):
                 return DUPLICATE_PHONE_MESSAGE
             self.db.upsert_group_setup(chat_id, female_phone=phone, status="complete")
-            return SETUP_COMPLETE_MESSAGE
+            return self._build_completion_message(setup.get("male_name"), setup.get("female_name"))
 
         return None  # status == "complete" - ההרשמה כבר בוצעה
+
+    @staticmethod
+    def _build_completion_message(male_name: Optional[str], female_name: Optional[str]) -> str:
+        names = " ו".join(name for name in (male_name, female_name) if name)
+        greeting = f"מושלם, הכל מוכן {names}! 🎉" if names else "מושלם, הכל מוכן! 🎉"
+        return f"{greeting} מעכשיו אני פה בשבילכם.\n\n{ONBOARDING_BODY}"
+
+    @staticmethod
+    def _normalize_name(text: str) -> Optional[str]:
+        """ולידציה בסיסית לשם: לא ריק, לא ארוך מדי, ולא בטעות מספר טלפון"""
+        name = (text or "").strip()
+        if not name or len(name) > 40:
+            return None
+        if GroupSetupService._normalize_phone(name) is not None:
+            return None
+        return name
 
     @staticmethod
     def _normalize_phone(text: str) -> Optional[str]:

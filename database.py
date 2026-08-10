@@ -93,6 +93,18 @@ class DatabaseManager:
             print(f"❌ שגיאה בעדכון הגדרות קבוצה ב-Supabase: {e}")
             raise
 
+    def get_active_group_chat_ids(self):
+        """שליפת כל הקבוצות שסיימו את תהליך ההרשמה (status='complete') - משמש לתזכורת היומית שרצה על כולן"""
+        if not self.supabase:
+            return []
+
+        try:
+            response = self.supabase.table("group_settings").select("chat_id").eq("status", "complete").execute()
+            return [row["chat_id"] for row in response.data]
+        except Exception as e:
+            print(f"⚠️ לא ניתן לשלוף קבוצות פעילות (ייתכן שהטבלה 'group_settings' עדיין לא נוצרה ב-Supabase): {e}")
+            return []
+
     def get_monthly_summary(self, month_str, chat_id: str):
         """שליפת כל ההוצאות לחודש מסוים (בפורמט YYYY-MM) עבור קבוצה נתונה"""
         if not self.supabase:

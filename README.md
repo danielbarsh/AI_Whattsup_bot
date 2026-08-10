@@ -17,9 +17,9 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Proactive nudges** — when an expense pushes you to 70%/90%+ of a category's budget, the bot flags it immediately in the confirmation, not just when a report is requested.
 - **Financial Q&A** — tips, spending-habit analysis, and recommendations, always grounded in the household's real data, never invented.
 - **Monthly summary** — full expense breakdown against budget, with feedback tuned to how far into the month you are.
-- **Daily reminder** — a proactive nudge sent to the household's WhatsApp group every day at 15:00 Israel time, scheduled independently of the server's own timezone.
-- **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks for the man's and the woman's phone numbers before doing anything else. Nothing else works in that group until both are registered.
-- **Personality** — the bot recognizes who's writing and responds accordingly (including a gentle bias in Efrat's favor 😉).
+- **Daily reminder** — a proactive nudge sent to every active WhatsApp group (per `group_settings`) every day at 15:00 Israel time, scheduled independently of the server's own timezone.
+- **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks for each partner's name and phone number before doing anything else. Nothing else works in that group until both are registered.
+- **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉.
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
 
 ## 🧠 How it works
@@ -91,10 +91,11 @@ SUPABASE_URL=...
 SUPABASE_KEY=...
 GREEN_INSTANCE_ID=...
 GREEN_API_TOKEN=...
-REMINDER_CHAT_ID=...   # the shared WhatsApp group's chat_id, for the 15:00 daily reminder
 ```
 
-And in Supabase, an `expenses` table (item, amount, category, user_name, date, chat_id), a `budgets` table, and a `group_settings` table (tracks each group's onboarding progress and the two registered phone numbers). All expense/budget data is scoped by `chat_id`, so multiple WhatsApp groups can share the same bot deployment without their data mixing:
+No env var is needed for the daily reminder's target - it's read dynamically from every `group_settings` row with `status = 'complete'`, so it automatically covers every group that finished onboarding.
+
+And in Supabase, an `expenses` table (item, amount, category, user_name, date, chat_id), a `budgets` table, and a `group_settings` table (tracks each group's onboarding progress plus the registered name and phone number of each partner). All expense/budget data is scoped by `chat_id`, so multiple WhatsApp groups can share the same bot deployment without their data mixing, and the bot's personality (e.g. the flirtier "female" feedback) is driven by whichever phone number is registered as male/female per group, never by a hardcoded name:
 
 ```sql
 create table expenses (
@@ -118,9 +119,11 @@ create table budgets (
 
 create table group_settings (
   chat_id text primary key,
+  male_name text,
   male_phone text,
+  female_name text,
   female_phone text,
-  status text not null default 'pending_male',  -- pending_male | pending_female | complete
+  status text not null default 'pending_male_name',  -- pending_male_name | pending_male_phone | pending_female_name | pending_female_phone | complete
   updated_at timestamptz default now()
 );
 ```
@@ -142,6 +145,16 @@ alter table budgets add primary key (chat_id, category);
 ```
 
 Find `<YOUR_GROUP_CHAT_ID>` by running `select chat_id from group_settings;` if you've already completed the group onboarding flow, or from the server logs (`[עיבוד הודעה]: ... צ'אט=...`) — it looks like `1203630XXXXXXXXXX@g.us`.
+
+**Adding names to an existing `group_settings` table** (the onboarding flow now also asks for each partner's name, not just their phone number - no data is lost, existing rows just pick up two new nullable columns):
+
+```sql
+alter table group_settings add column male_name text;
+alter table group_settings add column female_name text;
+alter table group_settings alter column status set default 'pending_male_name';
+```
+
+Any group that was mid-registration under the old phone-only flow (`status` still `pending_male` or `pending_female`) gets automatically restarted through the new name+phone flow the next time it sends a message - handled in code, no manual fix needed.
 
 ```bash
 # Run the server

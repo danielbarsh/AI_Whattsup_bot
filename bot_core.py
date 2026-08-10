@@ -36,18 +36,18 @@ CHITCHAT_REPLIES = [
     "😊 אם צריך תזכורת למה אני יודע לעשות, פשוט תכתבו \"עזרה\".",
 ]
 
-# תשובות חולין חמות במיוחד לאפרת - קצת יותר כיף ואישי מהגרסה הרגילה
-EFRAT_CHITCHAT_REPLIES = [
-    "בשמחה אפרתי! 😊 תמיד כיף לעזור לך.",
+# תשובות חולין חמות במיוחד לתפקיד ה"אישה" בקבוצה - קצת יותר כיף ואישי מהגרסה הרגילה. {name} מוחלף בשם הרשום שלה.
+FEMALE_CHITCHAT_REPLIES = [
+    "בשמחה {name}! 😊 תמיד כיף לעזור לך.",
     "🙌 בכל רגע בשבילך, את יודעת.",
     "😍 את והתקציב - הצוות הכי טוב שיש.",
     "💕 תמיד שמח לשמוע ממך.",
 ]
 
-# פידבק חיובי קבוע שאפרת תמיד תקבל כשהיא רושמת הוצאה - הבוט קצת נוטה לצדה :)
-EFRAT_COMPLIMENTS = [
+# פידבק חיובי קבוע שתפקיד ה"אישה" תמיד מקבל כשהיא רושמת הוצאה - הבוט קצת נוטה לצדה :). {name} מוחלף בשם הרשום שלה.
+FEMALE_COMPLIMENTS = [
     "איזה תותחית! 💪",
-    "אפרתי, קנייה מוצדקת לגמרי! 🙌",
+    "{name}, קנייה מוצדקת לגמרי! 🙌",
     "ברור שזה היה שווה כל שקל 😍",
     "טעם מעולה כרגיל 👑",
     "את פשוט יודעת לקנות נכון ✨",
@@ -62,8 +62,8 @@ EFRAT_COMPLIMENTS = [
     "כל הכבוד יפהפייה 😘",
 ]
 
-# מחמאות ספציפיות לאפרת לפי קטגוריה - עדיפות על פני הרשימה הכללית כשיש התאמה
-EFRAT_CATEGORY_COMPLIMENTS = {
+# מחמאות ספציפיות לתפקיד ה"אישה" לפי קטגוריה - עדיפות על פני הרשימה הכללית כשיש התאמה
+FEMALE_CATEGORY_COMPLIMENTS = {
     "ביגוד": [
         "בגד חדש = אושר מיידי! 👗✨",
         "תמיד יודעת לבחור הכי טוב 👠",
@@ -101,7 +101,7 @@ class BotCore:
 
     def process_message(self, text: str, sender_name: Optional[str], chat_id: str, sender_phone: Optional[str] = None) -> str:
         """הפונקציה המרכזית שאחראית לנתב בין כל סוגי ההודעות. chat_id הוא חובה - כל שמירה/שליפה מה-DB מבודדת לפי הקבוצה השולחת"""
-        sender_name = self._resolve_sender_name(sender_name, chat_id, sender_phone)
+        role, sender_name = self._identify_sender(sender_name, chat_id, sender_phone)
         lower_text = text.lower()
 
         # שכבה 0 (חינם): בדיקה אם מדובר בבקשת סיכום, בלי לגעת ב-AI בכלל
@@ -127,14 +127,14 @@ class BotCore:
         parsed.user = sender_name
 
         if parsed.intent == "expense":
-            return self._handle_new_expense(parsed, chat_id)
+            return self._handle_new_expense(parsed, chat_id, role)
         if parsed.intent == "budget_set":
             return self._handle_budget_set(parsed, chat_id)
         if parsed.intent == "budget_query":
             return self._handle_budget_query(parsed, chat_id)
         if parsed.intent == "general_question":
             return self._handle_general_question(parsed, chat_id)
-        return self._handle_chitchat(text, sender_name)
+        return self._handle_chitchat(text, role, sender_name)
 
     def _spend_by_category(self, month_str: str, chat_id: str) -> dict:
         """סך ההוצאות של חודש נתון, מקובץ לפי קטגוריה - מבוסס על אותה שליפה שמשרתת גם את הסיכום"""
@@ -158,7 +158,7 @@ class BotCore:
 
     # ---------- הוצאה חדשה ----------
 
-    def _handle_new_expense(self, parsed: ParsedMessage, chat_id: str) -> str:
+    def _handle_new_expense(self, parsed: ParsedMessage, chat_id: str, role: str) -> str:
         """טיפול בהוצאה חדשה: שמירה ב-DB, פידבק אישי, ותזכורת תקציב אם רלוונטי - תומך בכמה פריטים באותה הודעה"""
         if not parsed.expenses:
             return "לא הצלחתי להבין את פרטי ההוצאה. אפשר לנסח מחדש? (למשל: \"חלב וביצים ב-25 ש\"ח\")"
@@ -171,10 +171,10 @@ class BotCore:
                 self.db.save_expense(expense.item, expense.amount, expense.category, parsed.user, chat_id)
 
                 lines.append(f"✅ נרשם: *{expense.item}* בסך *{expense.amount} ש\"ח* ({expense.category})")
-                lines.append(self._get_expense_feedback(parsed.user, expense.category, expense.amount))
+                lines.append(self._get_expense_feedback(role, parsed.user, expense.category, expense.amount))
 
                 if expense.category not in notified_categories:
-                    budget_nudge = self._get_budget_nudge(expense.category, parsed.user, chat_id)
+                    budget_nudge = self._get_budget_nudge(expense.category, role, chat_id)
                     if budget_nudge:
                         lines.append(budget_nudge)
                     notified_categories.add(expense.category)
@@ -184,7 +184,7 @@ class BotCore:
             print(f"❌ שגיאה בעיבוד הוצאה: {e}")
             return "משהו השתבש בניסיון לרשום את ההוצאה."
 
-    def _get_budget_nudge(self, category: str, sender_name: Optional[str], chat_id: str) -> Optional[str]:
+    def _get_budget_nudge(self, category: str, role: str, chat_id: str) -> Optional[str]:
         """תזכורת יזומה כשמתקרבים/חורגים מהתקציב - חישוב Python בלבד, בלי עלות AI נוספת"""
         budgets = self.db.get_budgets(chat_id)
         limit = budgets.get(category)
@@ -194,57 +194,42 @@ class BotCore:
         current_month = datetime.datetime.now().strftime("%Y-%m")
         spent = self._spend_by_category(current_month, chat_id).get(category, 0.0)
         ratio = spent / limit if limit else 0
-        role = self._get_role(sender_name)
 
         if ratio >= 1:
-            if role == "efrat":
+            if role == "female":
                 return f'🌸 סטטוס: כבר {spent:.0f} מתוך {limit:.0f} ש"ח בתקציב {category} החודש - אבל את שווה את זה בכל מקרה 😘'
             return f"🔴 שימו לב: חרגתם מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         if ratio >= 0.9:
-            if role == "efrat":
+            if role == "female":
                 return f'💕 עוד קצת ומיצינו את התקציב ל{category} ({spent:.0f}/{limit:.0f} ש"ח) - אבל מגיע לך 😉'
             return f"🔴 שימו לב: זה כבר {ratio * 100:.0f}% מהתקציב ל{category} החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         if ratio >= 0.7:
-            if role == "efrat":
+            if role == "female":
                 return f'🙂 {ratio * 100:.0f}% מהתקציב ל{category} נוצל החודש ({spent:.0f}/{limit:.0f} ש"ח) - קצב מעולה!'
             return f"🟡 {ratio * 100:.0f}% מהתקציב ל{category} כבר נוצל החודש ({spent:.0f}/{limit:.0f} ש\"ח)."
         return None
 
-    def _get_role(self, sender_name: Optional[str]) -> str:
-        """זיהוי בסיסי מי כתב - אפרת, דניאל, או מישהו אחר - לפי השם שמגיע מוואטסאפ"""
-        name = (sender_name or "")
-        if "אפרת" in name:
-            return "efrat"
-        if "דניאל" in name:
-            return "daniel"
-        return "other"
+    def _identify_sender(self, sender_name: Optional[str], chat_id: Optional[str], sender_phone: Optional[str]):
+        """מזהה את השולח מול group_settings לפי מספר טלפון (ר' group_setup.py) - אין יותר הסתמכות על שם קבוע כמו 'דניאל'/'אפרת'.
+        מחזיר (role, display_name): role הוא 'male'/'female'/'other', ו-display_name הוא השם הרשום אם נמצאה התאמה, אחרת שם השולח מוואטסאפ"""
+        if chat_id and sender_phone:
+            setup = self.db.get_group_setup(chat_id)
+            if setup:
+                if setup.get("male_phone") == sender_phone:
+                    return "male", setup.get("male_name") or sender_name
+                if setup.get("female_phone") == sender_phone:
+                    return "female", setup.get("female_name") or sender_name
 
-    def _resolve_sender_name(self, sender_name: Optional[str], chat_id: Optional[str], sender_phone: Optional[str]) -> Optional[str]:
-        """אם הקבוצה נרשמה עם מספרי הטלפון של בני הזוג (ר' group_setup.py) - מתאים את מספר השולח לשם הקבוע שלו,
-        כדי שכל לוגיקת הזיהוי הקיימת (_get_role) תמשיך לעבוד גם כשה-senderName מוואטסאפ שונה/חסר"""
-        if not chat_id or not sender_phone:
-            return sender_name
+        return "other", sender_name
 
-        setup = self.db.get_group_setup(chat_id)
-        if not setup:
-            return sender_name
-
-        if setup.get("male_phone") == sender_phone:
-            return "דניאל"
-        if setup.get("female_phone") == sender_phone:
-            return "אפרת"
-        return sender_name
-
-    def _get_expense_feedback(self, sender_name: Optional[str], category: str, amount: float) -> str:
-        """פידבק קליל על ההוצאה - הבוט קצת נוטה לצד אפרת :)"""
-        role = self._get_role(sender_name)
-
-        # לאפרת תמיד יש מחמאה, לא משנה מה קנתה - עם עדיפות למחמאה ספציפית לקטגוריה אם יש
-        if role == "efrat":
-            category_options = EFRAT_CATEGORY_COMPLIMENTS.get(category)
+    def _get_expense_feedback(self, role: str, display_name: Optional[str], category: str, amount: float) -> str:
+        """פידבק קליל על ההוצאה - הבוט קצת נוטה לצד תפקיד ה'אישה' בקבוצה"""
+        # לתפקיד ה"אישה" תמיד יש מחמאה, לא משנה מה קנתה - עם עדיפות למחמאה ספציפית לקטגוריה אם יש
+        if role == "female":
+            category_options = FEMALE_CATEGORY_COMPLIMENTS.get(category)
             if category_options:
                 return random.choice(category_options)
-            return random.choice(EFRAT_COMPLIMENTS)
+            return random.choice(FEMALE_COMPLIMENTS).format(name=display_name or "")
 
         # הוצאות בריאות לא נשפטות בכלל
         if category == "בריאות":
@@ -252,7 +237,9 @@ class BotCore:
 
         threshold = CATEGORY_THRESHOLDS.get(category)
         if threshold is not None and amount > threshold:
-            return "קצת יקר 😅" if role != "daniel" else "דניאל... קצת יקר הפעם 😅"
+            if role == "male" and display_name:
+                return f"{display_name}... קצת יקר הפעם 😅"
+            return "קצת יקר 😅"
 
         return "כל הכבוד! 👏"
 
@@ -398,21 +385,21 @@ class BotCore:
 
     # ---------- שיחת חולין ----------
 
-    def _build_onboarding_message(self, sender_name: Optional[str]) -> str:
-        role = self._get_role(sender_name)
-        if role == "efrat":
-            intro = "היי אפרתי המהממת! 😍💕 איזה כיף שאת כאן."
-        elif role == "daniel":
-            intro = "היי דניאל! 👋"
+    def _build_onboarding_message(self, role: str, display_name: Optional[str]) -> str:
+        if role == "female":
+            name_part = f"{display_name} המהממת" if display_name else "מהממת"
+            intro = f"היי {name_part}! 😍💕 איזה כיף שאת כאן."
+        elif role == "male" and display_name:
+            intro = f"היי {display_name}! 👋"
         else:
             intro = "היי! 👋"
         return f"{intro} {ONBOARDING_BODY}"
 
-    def _handle_chitchat(self, text: str, sender_name: Optional[str]) -> str:
+    def _handle_chitchat(self, text: str, role: str, display_name: Optional[str]) -> str:
         normalized = (text or "").strip().lower()
         if any(keyword in normalized for keyword in GREETING_KEYWORDS):
-            return self._build_onboarding_message(sender_name)
+            return self._build_onboarding_message(role, display_name)
 
-        if self._get_role(sender_name) == "efrat":
-            return random.choice(EFRAT_CHITCHAT_REPLIES)
+        if role == "female":
+            return random.choice(FEMALE_CHITCHAT_REPLIES).format(name=display_name or "")
         return random.choice(CHITCHAT_REPLIES)
