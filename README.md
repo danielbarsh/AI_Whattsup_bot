@@ -21,6 +21,7 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Groups only** — the bot ignores every private/1:1 chat outright (no processing, no reply, not even the onboarding flow). It only ever responds inside WhatsApp groups.
 - **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks for each partner's name and phone number before doing anything else. Nothing else works in that group until both are registered.
 - **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉.
+- **Natural typing pace** — every outgoing message shows WhatsApp's "typing…" indicator for 1-2 seconds first (via Green-API's `typingTime`), instead of firing back instantly.
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
 
 ## 🧠 How it works

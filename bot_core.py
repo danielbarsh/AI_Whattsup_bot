@@ -210,7 +210,7 @@ class BotCore:
         return None
 
     def _identify_sender(self, sender_name: Optional[str], chat_id: Optional[str], sender_phone: Optional[str]):
-        """מזהה את השולח מול group_settings לפי מספר טלפון (ר' group_setup.py) - אין יותר הסתמכות על שם קבוע כמו 'דניאל'/'אפרת'.
+        """מזהה את השולח מול group_settings לפי מספר טלפון (ר' group_setup.py) - אין הסתמכות על שם קבוע מראש.
         מחזיר (role, display_name): role הוא 'male'/'female'/'other', ו-display_name הוא השם הרשום אם נמצאה התאמה, אחרת שם השולח מוואטסאפ"""
         if chat_id and sender_phone:
             setup = self.db.get_group_setup(chat_id)
