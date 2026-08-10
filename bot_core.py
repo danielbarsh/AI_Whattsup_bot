@@ -99,8 +99,8 @@ class BotCore:
         self.db = db_manager
         self.ai = ai_manager
 
-    def process_message(self, text: str, sender_name: Optional[str], chat_id: Optional[str] = None, sender_phone: Optional[str] = None) -> str:
-        """הפונקציה המרכזית שאחראית לנתב בין כל סוגי ההודעות"""
+    def process_message(self, text: str, sender_name: Optional[str], chat_id: str, sender_phone: Optional[str] = None) -> str:
+        """הפונקציה המרכזית שאחראית לנתב בין כל סוגי ההודעות. chat_id הוא חובה - כל שמירה/שליפה מה-DB מבודדת לפי הקבוצה השולחת"""
         sender_name = self._resolve_sender_name(sender_name, chat_id, sender_phone)
         lower_text = text.lower()
 
@@ -115,7 +115,7 @@ class BotCore:
             elif "2026-08" in text:
                 month_to_fetch = "2026-08"
 
-            return self._handle_summary_request(month_to_fetch)
+            return self._handle_summary_request(month_to_fetch, chat_id)
 
         # שכבה 1: קריאת AI אחת שמסווגת כוונה ומחלצת שדות
         try:
@@ -127,18 +127,18 @@ class BotCore:
         parsed.user = sender_name
 
         if parsed.intent == "expense":
-            return self._handle_new_expense(parsed)
+            return self._handle_new_expense(parsed, chat_id)
         if parsed.intent == "budget_set":
-            return self._handle_budget_set(parsed)
+            return self._handle_budget_set(parsed, chat_id)
         if parsed.intent == "budget_query":
-            return self._handle_budget_query(parsed)
+            return self._handle_budget_query(parsed, chat_id)
         if parsed.intent == "general_question":
-            return self._handle_general_question(parsed)
+            return self._handle_general_question(parsed, chat_id)
         return self._handle_chitchat(text, sender_name)
 
-    def _spend_by_category(self, month_str: str) -> dict:
+    def _spend_by_category(self, month_str: str, chat_id: str) -> dict:
         """סך ההוצאות של חודש נתון, מקובץ לפי קטגוריה - מבוסס על אותה שליפה שמשרתת גם את הסיכום"""
-        expenses = self.db.get_monthly_summary(month_str)
+        expenses = self.db.get_monthly_summary(month_str, chat_id)
         totals: dict = {}
         for exp in expenses:
             category = exp.get("category", "שונות")
@@ -158,7 +158,7 @@ class BotCore:
 
     # ---------- הוצאה חדשה ----------
 
-    def _handle_new_expense(self, parsed: ParsedMessage) -> str:
+    def _handle_new_expense(self, parsed: ParsedMessage, chat_id: str) -> str:
         """טיפול בהוצאה חדשה: שמירה ב-DB, פידבק אישי, ותזכורת תקציב אם רלוונטי - תומך בכמה פריטים באותה הודעה"""
         if not parsed.expenses:
             return "לא הצלחתי להבין את פרטי ההוצאה. אפשר לנסח מחדש? (למשל: \"חלב וביצים ב-25 ש\"ח\")"
@@ -168,13 +168,13 @@ class BotCore:
             notified_categories = set()
 
             for expense in parsed.expenses:
-                self.db.save_expense(expense.item, expense.amount, expense.category, parsed.user)
+                self.db.save_expense(expense.item, expense.amount, expense.category, parsed.user, chat_id)
 
                 lines.append(f"✅ נרשם: *{expense.item}* בסך *{expense.amount} ש\"ח* ({expense.category})")
                 lines.append(self._get_expense_feedback(parsed.user, expense.category, expense.amount))
 
                 if expense.category not in notified_categories:
-                    budget_nudge = self._get_budget_nudge(expense.category, parsed.user)
+                    budget_nudge = self._get_budget_nudge(expense.category, parsed.user, chat_id)
                     if budget_nudge:
                         lines.append(budget_nudge)
                     notified_categories.add(expense.category)
@@ -184,15 +184,15 @@ class BotCore:
             print(f"❌ שגיאה בעיבוד הוצאה: {e}")
             return "משהו השתבש בניסיון לרשום את ההוצאה."
 
-    def _get_budget_nudge(self, category: str, sender_name: Optional[str]) -> Optional[str]:
+    def _get_budget_nudge(self, category: str, sender_name: Optional[str], chat_id: str) -> Optional[str]:
         """תזכורת יזומה כשמתקרבים/חורגים מהתקציב - חישוב Python בלבד, בלי עלות AI נוספת"""
-        budgets = self.db.get_budgets()
+        budgets = self.db.get_budgets(chat_id)
         limit = budgets.get(category)
         if not limit:
             return None
 
         current_month = datetime.datetime.now().strftime("%Y-%m")
-        spent = self._spend_by_category(current_month).get(category, 0.0)
+        spent = self._spend_by_category(current_month, chat_id).get(category, 0.0)
         ratio = spent / limit if limit else 0
         role = self._get_role(sender_name)
 
@@ -258,24 +258,24 @@ class BotCore:
 
     # ---------- תקציבים ----------
 
-    def _handle_budget_set(self, parsed: ParsedMessage) -> str:
+    def _handle_budget_set(self, parsed: ParsedMessage, chat_id: str) -> str:
         if not parsed.category or parsed.amount is None:
             return "לא הצלחתי להבין באיזו קטגוריה ובאיזה סכום לקבוע את התקציב. אפשר לכתוב למשל: \"תגדיר תקציב סופר 1500\"?"
 
         try:
-            self.db.upsert_budget(parsed.category, parsed.amount, parsed.user)
+            self.db.upsert_budget(parsed.category, parsed.amount, parsed.user, chat_id)
             return f'✅ התקציב עבור *{parsed.category}* עודכן ל- *{parsed.amount:.0f} ש"ח* לחודש.'
         except Exception as e:
             print(f"❌ שגיאה בעדכון תקציב: {e}")
             return "משהו השתבש בניסיון לעדכן את התקציב."
 
-    def _handle_budget_query(self, parsed: ParsedMessage) -> str:
-        budgets = self.db.get_budgets()
+    def _handle_budget_query(self, parsed: ParsedMessage, chat_id: str) -> str:
+        budgets = self.db.get_budgets(chat_id)
         if not budgets:
             return "עדיין לא הוגדרו תקציבים. אפשר להתחיל למשל עם: \"תגדיר תקציב סופר 1500\"."
 
         current_month = datetime.datetime.now().strftime("%Y-%m")
-        spend_by_category = self._spend_by_category(current_month)
+        spend_by_category = self._spend_by_category(current_month, chat_id)
 
         if parsed.category:
             limit = budgets.get(parsed.category)
@@ -303,14 +303,14 @@ class BotCore:
 
     # ---------- סיכום חודשי ----------
 
-    def _handle_summary_request(self, month_str: str) -> str:
+    def _handle_summary_request(self, month_str: str, chat_id: str) -> str:
         """שליפת הנתונים מ-Supabase ובניית הודעת סיכום מעוצבת, כולל השוואה לתקציב שהוגדר"""
-        expenses = self.db.get_monthly_summary(month_str)
+        expenses = self.db.get_monthly_summary(month_str, chat_id)
 
         if not expenses:
             return f"לא מצאתי הוצאות רשומות עבור חודש {month_str}."
 
-        budgets = self.db.get_budgets()
+        budgets = self.db.get_budgets(chat_id)
         spend_by_category: dict = {}
 
         response_lines = [f"📊 *סיכום הוצאות לחודש {month_str}:*\n"]
@@ -366,11 +366,11 @@ class BotCore:
 
     # ---------- שאלות פיננסיות כלליות ----------
 
-    def _build_finance_context(self) -> str:
+    def _build_finance_context(self, chat_id: str) -> str:
         """מחרוזת עובדות אמיתיות (מספרים מה-DB בלבד) שמוזרקת לפרומפט - כדי שה-AI לעולם לא ימציא סכומים"""
         current_month = datetime.datetime.now().strftime("%Y-%m")
-        spend_by_category = self._spend_by_category(current_month)
-        budgets = self.db.get_budgets()
+        spend_by_category = self._spend_by_category(current_month, chat_id)
+        budgets = self.db.get_budgets(chat_id)
         total_spent = sum(spend_by_category.values())
 
         lines = [f"חודש נוכחי: {current_month}", f'סך הוצאות החודש: {total_spent:.0f} ש"ח']
@@ -387,9 +387,9 @@ class BotCore:
 
         return "\n".join(lines)
 
-    def _handle_general_question(self, parsed: ParsedMessage) -> str:
+    def _handle_general_question(self, parsed: ParsedMessage, chat_id: str) -> str:
         try:
-            context = self._build_finance_context()
+            context = self._build_finance_context(chat_id)
             question = parsed.question or ""
             return self.ai.answer_finance_question(question, context, sender_name=parsed.user or "")
         except Exception as e:

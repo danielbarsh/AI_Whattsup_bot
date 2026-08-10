@@ -94,14 +94,26 @@ GREEN_API_TOKEN=...
 REMINDER_CHAT_ID=...   # the shared WhatsApp group's chat_id, for the 15:00 daily reminder
 ```
 
-And in Supabase, an `expenses` table (item, amount, category, user_name, date), a `budgets` table, and a `group_settings` table (tracks each group's onboarding progress and the two registered phone numbers):
+And in Supabase, an `expenses` table (item, amount, category, user_name, date, chat_id), a `budgets` table, and a `group_settings` table (tracks each group's onboarding progress and the two registered phone numbers). All expense/budget data is scoped by `chat_id`, so multiple WhatsApp groups can share the same bot deployment without their data mixing:
 
 ```sql
+create table expenses (
+  id bigint generated always as identity primary key,
+  item text not null,
+  amount numeric not null,
+  category text not null,
+  user_name text,
+  chat_id text not null,
+  date timestamptz default now()
+);
+
 create table budgets (
-  category text primary key,
+  category text not null,
   monthly_limit numeric not null,
   updated_by text,
-  updated_at timestamptz default now()
+  chat_id text not null,
+  updated_at timestamptz default now(),
+  primary key (chat_id, category)
 );
 
 create table group_settings (
@@ -112,6 +124,24 @@ create table group_settings (
   updated_at timestamptz default now()
 );
 ```
+
+**Migrating an existing install** (adding `chat_id` to `expenses`/`budgets` without losing existing data): see the "Adding multi-group support" migration script in the project's history, or run:
+
+```sql
+-- expenses: add the column, backfill existing rows with your current group's chat_id, then require it going forward
+alter table expenses add column chat_id text;
+update expenses set chat_id = '<YOUR_GROUP_CHAT_ID>' where chat_id is null;
+alter table expenses alter column chat_id set not null;
+
+-- budgets: same, plus widen the primary key from `category` alone to `(chat_id, category)`
+alter table budgets add column chat_id text;
+update budgets set chat_id = '<YOUR_GROUP_CHAT_ID>' where chat_id is null;
+alter table budgets alter column chat_id set not null;
+alter table budgets drop constraint budgets_pkey;
+alter table budgets add primary key (chat_id, category);
+```
+
+Find `<YOUR_GROUP_CHAT_ID>` by running `select chat_id from group_settings;` if you've already completed the group onboarding flow, or from the server logs (`[עיבוד הודעה]: ... צ'אט=...`) — it looks like `1203630XXXXXXXXXX@g.us`.
 
 ```bash
 # Run the server
