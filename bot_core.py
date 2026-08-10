@@ -158,19 +158,25 @@ class BotCore:
     # ---------- הוצאה חדשה ----------
 
     def _handle_new_expense(self, parsed: ParsedMessage) -> str:
-        """טיפול בהוצאה חדשה: שמירה ב-DB, פידבק אישי, ותזכורת תקציב אם רלוונטי"""
+        """טיפול בהוצאה חדשה: שמירה ב-DB, פידבק אישי, ותזכורת תקציב אם רלוונטי - תומך בכמה פריטים באותה הודעה"""
+        if not parsed.expenses:
+            return "לא הצלחתי להבין את פרטי ההוצאה. אפשר לנסח מחדש? (למשל: \"חלב וביצים ב-25 ש\"ח\")"
+
         try:
-            if not parsed.item or parsed.amount is None or not parsed.category:
-                return "לא הצלחתי להבין את פרטי ההוצאה. אפשר לנסח מחדש? (למשל: \"חלב וביצים ב-25 ש\"ח\")"
+            lines = []
+            notified_categories = set()
 
-            self.db.save_expense(parsed)
+            for expense in parsed.expenses:
+                self.db.save_expense(expense.item, expense.amount, expense.category, parsed.user)
 
-            lines = [f"✅ נרשם: *{parsed.item}* בסך *{parsed.amount} ש\"ח* ({parsed.category})"]
-            lines.append(self._get_expense_feedback(parsed.user, parsed.category, parsed.amount))
+                lines.append(f"✅ נרשם: *{expense.item}* בסך *{expense.amount} ש\"ח* ({expense.category})")
+                lines.append(self._get_expense_feedback(parsed.user, expense.category, expense.amount))
 
-            budget_nudge = self._get_budget_nudge(parsed.category, parsed.user)
-            if budget_nudge:
-                lines.append(budget_nudge)
+                if expense.category not in notified_categories:
+                    budget_nudge = self._get_budget_nudge(expense.category, parsed.user)
+                    if budget_nudge:
+                        lines.append(budget_nudge)
+                    notified_categories.add(expense.category)
 
             return "\n".join(lines)
         except Exception as e:

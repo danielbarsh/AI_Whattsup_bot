@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 # רשימה סגורה של קטגוריות - כדי שה-AI יסווג באופן עקבי ולא ימציא קטגוריות חדשות בכל פעם
@@ -9,11 +9,18 @@ ExpenseCategory = Literal[
 # כוונת ההודעה - לפי זה בוט_קור מנתב לטיפול המתאים
 IntentType = Literal["expense", "budget_set", "budget_query", "general_question", "chitchat"]
 
+class ExpenseItem(BaseModel):
+    """פריט הוצאה בודד - הודעה אחת יכולה להכיל כמה מהם (למשל "לחם ב-10 ועוד דלק ב-200")"""
+    item: str
+    amount: float
+    category: ExpenseCategory
+
 class ParsedMessage(BaseModel):
     intent: IntentType
-    item: Optional[str] = None
+    # רלוונטי ל-expense בלבד - רשימה כי הודעה אחת עשויה לתאר כמה הוצאות שונות
+    expenses: Optional[List[ExpenseItem]] = None
     amount: Optional[float] = None
-    # רלוונטי גם ל-expense וגם ל-budget_set/budget_query (None ב-budget_query = כל הקטגוריות)
+    # רלוונטי ל-budget_set/budget_query (None ב-budget_query = כל הקטגוריות)
     category: Optional[ExpenseCategory] = None
     # טקסט השאלה המנוקה, רלוונטי ל-general_question בלבד
     question: Optional[str] = None

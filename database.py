@@ -14,24 +14,20 @@ class DatabaseManager:
             self.supabase = None
             print("⚠️ אזהרה: מפתחות Supabase לא הוגדרו ב-.env. הבוט יפעל ללא שמירה בענן.")
 
-    def save_expense(self, expense_data):
-        """שמירת הוצאה חדשה בענן - ללא שום גישה לשדה תאריך באובייקט הפייתון"""
+    def save_expense(self, item: str, amount: float, category: str, user: str):
+        """שמירת הוצאה בודדת חדשה בענן - ללא שום גישה לשדה תאריך באובייקט הפייתון"""
         if not self.supabase:
             print("❌ שגיאה: בסיס הנתונים לא מחובר.")
             return
-            
+
         try:
-            # חילוץ בטוח של השדות הקימיים בלבד. 
-            # אם השדה נקרא user, נמפה אותו לעמודת user_name ב-Supabase
-            user_val = getattr(expense_data, "user", None) or getattr(expense_data, "user_name", "Unknown")
-            
             data = {
-                "item": getattr(expense_data, "item", "פריט כללי"),
-                "amount": float(getattr(expense_data, "amount", 0)),
-                "category": getattr(expense_data, "category", "כללי"),
-                "user_name": user_val
+                "item": item,
+                "amount": float(amount),
+                "category": category,
+                "user_name": user or "Unknown",
             }
-            
+
             # שליחה ל-Supabase. עמודת ה-date תתמלא אוטומטית על ידי השרת בענן (DEFAULT NOW)
             self.supabase.table("expenses").insert(data).execute()
             print(f"💾 ההוצאה נשמרה בהצלחה ב-Supabase: {data['item']}")
