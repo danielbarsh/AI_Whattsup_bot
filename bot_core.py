@@ -133,7 +133,7 @@ class BotCore:
         if parsed.intent == "budget_query":
             return self._handle_budget_query(parsed, chat_id)
         if parsed.intent == "general_question":
-            return self._handle_general_question(parsed, chat_id)
+            return self._handle_general_question(parsed, chat_id, role)
         return self._handle_chitchat(text, role, sender_name)
 
     def _spend_by_category(self, month_str: str, chat_id: str) -> dict:
@@ -374,11 +374,11 @@ class BotCore:
 
         return "\n".join(lines)
 
-    def _handle_general_question(self, parsed: ParsedMessage, chat_id: str) -> str:
+    def _handle_general_question(self, parsed: ParsedMessage, chat_id: str, role: str) -> str:
         try:
             context = self._build_finance_context(chat_id)
             question = parsed.question or ""
-            return self.ai.answer_finance_question(question, context, sender_name=parsed.user or "")
+            return self.ai.answer_finance_question(question, context, sender_name=parsed.user or "", is_female=(role == "female"))
         except Exception as e:
             print(f"❌ שגיאה במענה על שאלה פיננסית: {e}")
             return "משהו השתבש בניסיון לענות. אפשר לנסות שוב?"

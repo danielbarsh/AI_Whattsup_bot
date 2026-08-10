@@ -124,7 +124,7 @@ create table group_settings (
   male_phone text,
   female_name text,
   female_phone text,
-  status text not null default 'pending_male_name',  -- pending_male_name | pending_male_phone | pending_female_name | pending_female_phone | complete
+  status text not null default 'awaiting_male_phone',  -- awaiting_male_phone | awaiting_male_name | awaiting_female_phone | awaiting_female_name | complete
   updated_at timestamptz default now()
 );
 ```
@@ -152,8 +152,10 @@ Find `<YOUR_GROUP_CHAT_ID>` by running `select chat_id from group_settings;` if 
 ```sql
 alter table group_settings add column male_name text;
 alter table group_settings add column female_name text;
-alter table group_settings alter column status set default 'pending_male_name';
+alter table group_settings alter column status set default 'awaiting_male_phone';
 ```
+
+The onboarding order was later flipped to phone-first (ask the number, then the name, for each partner) - this was a pure code change (new `status` values: `awaiting_male_phone` → `awaiting_male_name` → `awaiting_female_phone` → `awaiting_female_name` → `complete`), no extra SQL needed. Any group whose `status` doesn't match one of those five values (leftover from an older flow ordering) gets safely auto-restarted through the current flow on its next message.
 
 Any group that was mid-registration under the old phone-only flow (`status` still `pending_male` or `pending_female`) gets automatically restarted through the new name+phone flow the next time it sends a message - handled in code, no manual fix needed.
 
