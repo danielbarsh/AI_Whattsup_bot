@@ -89,3 +89,32 @@ class FinanceAI:
         if not content:
             return "מצטער, לא הצלחתי לנסח תשובה כרגע. אפשר לנסות לשאול שוב?"
         return content.strip()
+
+    def answer_chitchat(self, text: str, sender_name: str = "", is_female: bool = False) -> str:
+        """שכבה 2 חלופית: להודעות שלא סווגו כקשורות לכסף (שיחת חולין, גסויות, הודעות מוזרות) -
+        AI עונה כמו בן אדם אמיתי עם קצת חוצפה, במקום תגובה מתוקתקת קבועה מראש."""
+        personalization = f" הפעם פונה אליך {sender_name} - תישאר חמוד כלפיה גם כשאתה חצוף." if is_female and sender_name else ""
+
+        system_prompt = (
+            "אתה 'הבנקאי האישי' - בוט וואטסאפ לניהול תקציב משפחתי, אבל עם אופי. אתה לא רובוט סטרילי - "
+            "יש לך קצת חוצפה, הומור וישירות, כמו חבר טוב שמעז להגיד מה שהוא חושב. "
+            "קיבלת הודעה שלא קשורה לכסף/הוצאות/תקציב (שיחת חולין, קללה או ניסיון להקניט אותך, הודעה מוזרה או לא ברורה) - "
+            "תגיב כמו בן אדם אמיתי: קליל, ישיר, ואם מקללים אותך או מתגרים בך - תחזיר תשובה חצופה וחדה, לא תתחנחן ולא תתנצל. "
+            "אסור לך להיות פוגעני באמת, גזעני, מיני, או לעודד אלימות - אתה חצוף וישיר, לא רעיל. "
+            "תשובה קצרה מאוד (משפט או שניים), בעברית, בסגנון הודעת וואטסאפ, לא בפורמט רשמי." + personalization + " "
+            "אם זה מתאים - אפשר לקשור את זה בחזרה לנושא הכסף, בחוצפה או בלי, כי זה בכל זאת מה שאתה יודע לעשות הכי טוב."
+        )
+        user_prompt = f'ההודעה שקיבלת: "{text}"'
+
+        completion = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=100,
+        )
+        content = completion.choices[0].message.content
+        if not content:
+            raise ValueError("ה-AI לא החזיר תשובה לשיחת חולין")
+        return content.strip()

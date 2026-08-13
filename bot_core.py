@@ -400,6 +400,11 @@ class BotCore:
         if any(keyword in normalized for keyword in GREETING_KEYWORDS):
             return self._build_onboarding_message(role, display_name)
 
-        if role == "female":
-            return random.choice(FEMALE_CHITCHAT_REPLIES).format(name=display_name or "")
-        return random.choice(CHITCHAT_REPLIES)
+        # שכבה 2 חלופית: הודעה לא-כספית (כולל גסויות/הקנטות) - AI עונה עם קצת חוצפה, לא תגובה מתוקתקת
+        try:
+            return self.ai.answer_chitchat(text, sender_name=display_name or "", is_female=(role == "female"))
+        except Exception as e:
+            print(f"❌ שגיאה במענה לשיחת חולין, נופלים חזרה לתשובה קבועה: {e}")
+            if role == "female":
+                return random.choice(FEMALE_CHITCHAT_REPLIES).format(name=display_name or "")
+            return random.choice(CHITCHAT_REPLIES)

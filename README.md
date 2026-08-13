@@ -20,7 +20,7 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Daily reminder** — a proactive nudge sent to every active WhatsApp group (per `group_settings`) every day at 15:00 Israel time, scheduled independently of the server's own timezone.
 - **Groups only** — the bot ignores every private/1:1 chat outright (no processing, no reply, not even the onboarding flow). It only ever responds inside WhatsApp groups.
 - **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks whether it's a couple or a solo user, then collects the phone number(s) and name(s) accordingly. Nothing else works in that group until registration is complete.
-- **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉.
+- **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉. Off-topic or rude messages ("shut up", random chitchat, anything not classified as money-related) get a short, human, slightly sassy AI-generated reply instead of a canned response - never abusive back, just not a corporate robot either.
 - **Natural typing pace** — every outgoing message shows WhatsApp's "typing…" indicator for 1-2 seconds first (via Green-API's `typingTime`), instead of firing back instantly.
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
 
@@ -41,12 +41,13 @@ WhatsApp ──► Whapi Webhook ──► FastAPI (main.py)
                                      │                 (never by AI)
         ┌───────────┬───────────────┼──────────────┐
         ▼           ▼               ▼              ▼
-     expense    budget set/     general finance   chitchat
-                 query          question (2nd,
-                                 short AI call)
+     expense    budget set/     general finance   chitchat / anything
+                 query          question (2nd,     unclassified (2nd,
+                                 short AI call)     short AI call, with
+                                                    a bit of attitude)
 ```
 
-**Core principle — keeping AI costs down:** most messages (expense, budget, summary) go through **exactly one AI call**, and every money figure in a reply (amount, remaining budget, summary total) is always computed in Python straight from the DB — the AI never "invents" numbers. A second call only happens for genuinely open-ended financial questions, and even then the reply is short and focused.
+**Core principle — keeping AI costs down:** expense, budget, and summary messages go through **exactly one AI call**, and every money figure in a reply (amount, remaining budget, summary total) is always computed in Python straight from the DB — the AI never "invents" numbers. A second, short call happens for open-ended financial questions, and also for chitchat/off-topic messages (greetings are still free, matched by keyword) - that second call is what gives the bot its personality (a bit sassy/human, not a canned reply) when someone sends it something unrelated to money, including rude messages.
 
 ## 🛠️ Tech stack
 
