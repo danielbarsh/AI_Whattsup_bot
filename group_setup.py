@@ -7,23 +7,32 @@ from database import DatabaseManager
 # מספר טלפון תקין: ספרות בלבד (אחרי ניקוי), עם או בלי + מוביל, 9-15 ספרות
 _PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
-# כל הסטטוסים התקינים של הזרימה הנוכחית (טלפון -> שם, לכל אחד מבני הזוג)
+# כל הסטטוסים התקינים של הזרימה הנוכחית
 _KNOWN_STATUSES = {
+    "awaiting_mode",
     "awaiting_male_phone",
     "awaiting_male_name",
     "awaiting_female_phone",
     "awaiting_female_name",
+    "awaiting_solo_phone",
+    "awaiting_solo_name",
     "complete",
 }
 
 INTRO_MESSAGE = (
     "היי! 👋 אני *הבנקאי האישי* שלכם - בוט לניהול הוצאות ותקציב הבית בקבוצה הזו.\n\n"
-    "לפני שמתחילים, אני צריך להכיר את שני בני הזוג כדי שאדע להתאים לכל אחד את הפידבק שלו 🙂\n\n"
-    "📱 בואו נתחיל - מה *מספר הטלפון* של הגבר?"
+    "קודם כל - איך נשתמש בי כאן?\n\n"
+    "✍️ כתבו *זוג* אם שני בני זוג ינהלו כאן תקציב משותף.\n"
+    "✍️ כתבו *יחיד* אם רק אתה תרשום הוצאות כאן."
 )
 
 LEGACY_RESET_MESSAGE = (
     "עדכנו קצת את תהליך ההרשמה - בואו נעשה את זה שוב, זה ייקח רק רגע 🙂\n\n" + INTRO_MESSAGE
+)
+
+INVALID_MODE_MESSAGE = (
+    "לא הצלחתי להבין 🤔\n"
+    "אפשר לכתוב *זוג* או *יחיד*?"
 )
 
 INVALID_NAME_MESSAGE = (
@@ -42,7 +51,7 @@ DUPLICATE_PHONE_MESSAGE = (
 
 
 class GroupSetupService:
-    """שער הרשמה: קבוצה חדשה חייבת לספק מספר טלפון ושם עבור כל אחד משני בני הזוג לפני שהבוט מתחיל לפעול בה"""
+    """שער הרשמה: קבוצה חדשה חייבת לבחור אם זה זוג או משתמש יחיד, ולספק מספר טלפון ושם בהתאם, לפני שהבוט מתחיל לפעול בה"""
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
@@ -59,16 +68,28 @@ class GroupSetupService:
         setup = self.db.get_group_setup(chat_id)
 
         if setup is None:
-            self.db.upsert_group_setup(chat_id, status="awaiting_male_phone")
+            self.db.upsert_group_setup(chat_id, status="awaiting_mode")
             return INTRO_MESSAGE
 
         status = setup.get("status")
 
         if status not in _KNOWN_STATUSES:
-            # קבוצה שנרשמה תחת גרסה קודמת של הזרימה (סדר אחר, או בלי שמות בכלל) - מתחילים מחדש בבטחה.
+            # קבוצה שנרשמה תחת גרסה קודמת של הזרימה - מתחילים מחדש בבטחה.
             # מספרים/שמות שכבר נשמרו בעמודות הישנות לא נמחקים - רק ה-status מתאפס לתחילת הזרימה הנוכחית.
-            self.db.upsert_group_setup(chat_id, status="awaiting_male_phone")
+            self.db.upsert_group_setup(chat_id, status="awaiting_mode")
             return LEGACY_RESET_MESSAGE
+
+        if status == "awaiting_mode":
+            mode = self._normalize_mode(text)
+            if mode is None:
+                return INVALID_MODE_MESSAGE
+            if mode == "couple":
+                self.db.upsert_group_setup(chat_id, mode="couple", status="awaiting_male_phone")
+                return "מעולה! 😊\n\n📱 מה *מספר הטלפון* של הגבר?"
+            self.db.upsert_group_setup(chat_id, mode="individual", status="awaiting_solo_phone")
+            return "מעולה! 😊\n\n📱 מה *מספר הטלפון* שלך?"
+
+        # ---------- מסלול זוג ----------
 
         if status == "awaiting_male_phone":
             phone = self._normalize_phone(text)
@@ -100,13 +121,43 @@ class GroupSetupService:
             self.db.upsert_group_setup(chat_id, female_name=name, status="complete")
             return self._build_completion_message(setup.get("male_name"), name)
 
+        # ---------- מסלול יחיד ----------
+        # שני השדות (male/female) מקבלים בכוונה את אותם פרטים - כך ש-BotCore._identify_sender ימשיך
+        # לעבוד בלי שינוי (הוא בודק קודם match מול male_phone), בלי לשאול שאלת מגדר נוספת.
+
+        if status == "awaiting_solo_phone":
+            phone = self._normalize_phone(text)
+            if not phone:
+                return INVALID_PHONE_MESSAGE
+            self.db.upsert_group_setup(chat_id, male_phone=phone, female_phone=phone, status="awaiting_solo_name")
+            return "קיבלתי, תודה! ✅\n\n🙋 ואיך קוראים לך?"
+
+        if status == "awaiting_solo_name":
+            name = self._normalize_name(text)
+            if not name:
+                return INVALID_NAME_MESSAGE
+            self.db.upsert_group_setup(chat_id, male_name=name, female_name=name, status="complete")
+            return self._build_completion_message(name, name)
+
         return None  # status == "complete" - ההרשמה כבר בוצעה
 
     @staticmethod
     def _build_completion_message(male_name: Optional[str], female_name: Optional[str]) -> str:
-        names = " ו".join(name for name in (male_name, female_name) if name)
-        greeting = f"מושלם, הכל מוכן {names}! 🎉" if names else "מושלם, הכל מוכן! 🎉"
+        if male_name and male_name == female_name:
+            greeting = f"מושלם, הכל מוכן {male_name}! 🎉"
+        else:
+            names = " ו".join(name for name in (male_name, female_name) if name)
+            greeting = f"מושלם, הכל מוכן {names}! 🎉" if names else "מושלם, הכל מוכן! 🎉"
         return f"{greeting} מעכשיו אני פה בשבילכם.\n\n{ONBOARDING_BODY}"
+
+    @staticmethod
+    def _normalize_mode(text: str) -> Optional[str]:
+        normalized = (text or "").strip()
+        if "זוג" in normalized:
+            return "couple"
+        if "יחיד" in normalized:
+            return "individual"
+        return None
 
     @staticmethod
     def _normalize_name(text: str) -> Optional[str]:

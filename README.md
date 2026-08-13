@@ -19,7 +19,7 @@ A WhatsApp bot that manages a household's shared expenses and budget. Send it a 
 - **Monthly summary** — full expense breakdown against budget, with feedback tuned to how far into the month you are.
 - **Daily reminder** — a proactive nudge sent to every active WhatsApp group (per `group_settings`) every day at 15:00 Israel time, scheduled independently of the server's own timezone.
 - **Groups only** — the bot ignores every private/1:1 chat outright (no processing, no reply, not even the onboarding flow). It only ever responds inside WhatsApp groups.
-- **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks for each partner's name and phone number before doing anything else. Nothing else works in that group until both are registered.
+- **Group onboarding gate** — the first time the bot sees a message in a new WhatsApp group, it introduces itself and asks whether it's a couple or a solo user, then collects the phone number(s) and name(s) accordingly. Nothing else works in that group until registration is complete.
 - **Personality** — the bot recognizes who's writing (by phone number, matched against the group's registration - not a hardcoded name) and responds accordingly, including a gentle bias in the registered woman's favor 😉.
 - **Natural typing pace** — every outgoing message shows WhatsApp's "typing…" indicator for 1-2 seconds first (via Green-API's `typingTime`), instead of firing back instantly.
 - **Fault-tolerant** — an unclear message, an off-topic question, or an AI hiccup never breaks the bot — it always replies with something sensible.
@@ -121,11 +121,14 @@ create table budgets (
 
 create table group_settings (
   chat_id text primary key,
+  mode text,  -- 'couple' | 'individual'
   male_name text,
   male_phone text,
   female_name text,
   female_phone text,
-  status text not null default 'awaiting_male_phone',  -- awaiting_male_phone | awaiting_male_name | awaiting_female_phone | awaiting_female_name | complete
+  status text not null default 'awaiting_mode',
+  -- awaiting_mode | awaiting_male_phone | awaiting_male_name | awaiting_female_phone | awaiting_female_name
+  -- | awaiting_solo_phone | awaiting_solo_name | complete
   updated_at timestamptz default now()
 );
 ```
@@ -156,7 +159,16 @@ alter table group_settings add column female_name text;
 alter table group_settings alter column status set default 'awaiting_male_phone';
 ```
 
-The onboarding order was later flipped to phone-first (ask the number, then the name, for each partner) - this was a pure code change (new `status` values: `awaiting_male_phone` → `awaiting_male_name` → `awaiting_female_phone` → `awaiting_female_name` → `complete`), no extra SQL needed. Any group whose `status` doesn't match one of those five values (leftover from an older flow ordering) gets safely auto-restarted through the current flow on its next message.
+The onboarding order was later flipped to phone-first (ask the number, then the name, for each partner) - this was a pure code change (new `status` values: `awaiting_male_phone` → `awaiting_male_name` → `awaiting_female_phone` → `awaiting_female_name` → `complete`), no extra SQL needed. Any group whose `status` doesn't match one of those values (leftover from an older flow ordering) gets safely auto-restarted through the current flow on its next message.
+
+**Adding solo-user support to an existing `group_settings` table** (the very first onboarding question is now "couple or individual?" - a solo user only registers one phone/name, which gets mirrored into both the `male_*` and `female_*` columns so `BotCore`'s existing phone-matching logic needs no changes):
+
+```sql
+alter table group_settings add column mode text;
+alter table group_settings alter column status set default 'awaiting_mode';
+```
+
+This is purely additive on top of the existing flow - a group already mid-registration (any `awaiting_male_*`/`awaiting_female_*` status) is unaffected and continues normally, since those statuses keep their exact same meaning; only brand-new groups get asked the couple/individual question first.
 
 Any group that was mid-registration under the old phone-only flow (`status` still `pending_male` or `pending_female`) gets automatically restarted through the new name+phone flow the next time it sends a message - handled in code, no manual fix needed.
 
