@@ -134,6 +134,8 @@ class BotCore:
             return self._handle_budget_query(parsed, chat_id)
         if parsed.intent == "general_question":
             return self._handle_general_question(parsed, chat_id, role)
+        if parsed.intent == "help":
+            return self._build_onboarding_message(role, sender_name)
         return self._handle_chitchat(text, role, sender_name)
 
     def _spend_by_category(self, month_str: str, chat_id: str) -> dict:

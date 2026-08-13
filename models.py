@@ -7,7 +7,7 @@ ExpenseCategory = Literal[
 ]
 
 # כוונת ההודעה - לפי זה בוט_קור מנתב לטיפול המתאים
-IntentType = Literal["expense", "budget_set", "budget_query", "general_question", "chitchat"]
+IntentType = Literal["expense", "budget_set", "budget_query", "general_question", "chitchat", "help"]
 
 class ExpenseItem(BaseModel):
     """פריט הוצאה בודד - הודעה אחת יכולה להכיל כמה מהם (למשל "לחם ב-10 ועוד דלק ב-200")"""

@@ -39,13 +39,15 @@ WhatsApp ──► Whapi Webhook ──► FastAPI (main.py)
                                 intent                in Python from
                                 (gpt-4o-mini)          real DB data
                                      │                 (never by AI)
-        ┌───────────┬───────────────┼──────────────┐
-        ▼           ▼               ▼              ▼
-     expense    budget set/     general finance   chitchat / anything
-                 query          question (2nd,     unclassified (2nd,
-                                 short AI call)     short AI call, with
-                                                    a bit of attitude)
+    ┌───────────┬───────────────┼──────────────┬──────────────────┐
+    ▼           ▼               ▼              ▼                  ▼
+ expense    budget set/     general finance   help (fixed,     chitchat / anything
+             query          question (2nd,     free reply -    unclassified (2nd,
+                             short AI call)     lists what      short AI call, with
+                                                 the bot does)   a bit of attitude)
 ```
+
+The classifier's `help` intent (a semantic "what can you do?" detector, not a hardcoded keyword list) exists specifically so free-form capability questions ("מה אתה יכול לעשות", "איך זה עובד", etc.) get the bot's real fixed capabilities list instead of accidentally landing in the sassier chitchat path and getting a joke instead of an answer.
 
 **Core principle — keeping AI costs down:** expense, budget, and summary messages go through **exactly one AI call**, and every money figure in a reply (amount, remaining budget, summary total) is always computed in Python straight from the DB — the AI never "invents" numbers. A second, short call happens for open-ended financial questions, and also for chitchat/off-topic messages (greetings are still free, matched by keyword) - that second call is what gives the bot its personality (a bit sassy/human, not a canned reply) when someone sends it something unrelated to money, including rude messages.
 
